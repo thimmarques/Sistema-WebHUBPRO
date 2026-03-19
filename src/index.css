@@ -1,0 +1,145 @@
+@import "tailwindcss";
+
+@theme {
+  --color-background: hsl(var(--background));
+  --color-foreground: hsl(var(--foreground));
+
+  --color-card: hsl(var(--card));
+  --color-card-foreground: hsl(var(--card-foreground));
+
+  --color-popover: hsl(var(--popover));
+  --color-popover-foreground: hsl(var(--popover-foreground));
+
+  --color-primary: hsl(var(--primary));
+  --color-primary-foreground: hsl(var(--primary-foreground));
+
+  --color-secondary: hsl(var(--secondary));
+  --color-secondary-foreground: hsl(var(--secondary-foreground));
+
+  --color-muted: hsl(var(--muted));
+  --color-muted-foreground: hsl(var(--muted-foreground));
+
+  --color-accent: hsl(var(--accent));
+  --color-accent-foreground: hsl(var(--accent-foreground));
+
+  --color-destructive: hsl(var(--destructive));
+  --color-destructive-foreground: hsl(var(--destructive-foreground));
+
+  --color-border: hsl(var(--border));
+  --color-input: hsl(var(--input));
+  --color-ring: hsl(var(--ring));
+
+  --radius-lg: var(--radius);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-sm: calc(var(--radius) - 4px);
+
+  --color-sidebar: hsl(var(--sidebar));
+  --color-sidebar-foreground: hsl(var(--sidebar-foreground));
+  --color-sidebar-muted: hsl(var(--sidebar-muted));
+  --color-sidebar-active: hsl(var(--sidebar-active));
+
+  --color-badge-trabalhista: hsl(var(--badge-trabalhista));
+  --color-badge-trabalhista-fg: hsl(var(--badge-trabalhista-fg));
+  --color-badge-trabalhista-foreground: hsl(var(--badge-trabalhista-fg));
+  --color-badge-civil: hsl(var(--badge-civil));
+  --color-badge-civil-fg: hsl(var(--badge-civil-fg));
+  --color-badge-civil-foreground: hsl(var(--badge-civil-fg));
+  --color-badge-criminal: hsl(var(--badge-criminal));
+  --color-badge-criminal-fg: hsl(var(--badge-criminal-fg));
+  --color-badge-criminal-foreground: hsl(var(--badge-criminal-fg));
+  --color-badge-previdenciario: hsl(var(--badge-previdenciario));
+  --color-badge-previdenciario-fg: hsl(var(--badge-previdenciario-fg));
+  --color-badge-previdenciario-foreground: hsl(var(--badge-previdenciario-fg));
+
+  --color-badge-tributario: hsl(var(--badge-tributario));
+  --color-badge-tributario-fg: hsl(var(--badge-tributario-fg));
+  --color-badge-tributario-foreground: hsl(var(--badge-tributario-fg));
+
+  --color-badge-ativo: hsl(var(--badge-ativo));
+  --color-badge-ativo-fg: hsl(var(--badge-ativo-fg));
+  --color-badge-ativo-foreground: hsl(var(--badge-ativo-fg));
+  --color-badge-audiencia: hsl(var(--badge-audiencia));
+  --color-badge-audiencia-fg: hsl(var(--badge-audiencia-fg));
+  --color-badge-audiencia-foreground: hsl(var(--badge-audiencia-fg));
+  --color-badge-pendente: hsl(var(--badge-pendente));
+  --color-badge-pendente-fg: hsl(var(--badge-pendente-fg));
+  --color-badge-pendente-foreground: hsl(var(--badge-pendente-fg));
+  --color-badge-encerrado: hsl(var(--badge-encerrado));
+  --color-badge-encerrado-fg: hsl(var(--badge-encerrado-fg));
+  --color-badge-encerrado-foreground: hsl(var(--badge-encerrado-fg));
+  --color-badge-recurso: hsl(var(--badge-recurso));
+  --color-badge-recurso-fg: hsl(var(--badge-recurso-fg));
+  --color-badge-recurso-foreground: hsl(var(--badge-recurso-fg));
+}
+
+@layer base {
+  :root {
+    --background: 0 0% 95%;
+    --foreground: 203 44% 4%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 203 44% 4%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 203 44% 4%;
+
+    --primary: 204 27% 20%;
+    --primary-foreground: 0 0% 95%;
+
+    --secondary: 196 17% 70%;
+    --secondary-foreground: 203 44% 4%;
+
+    --muted: 195 16% 90%;
+    --muted-foreground: 197 20% 46%;
+
+    --accent: 197 20% 46%;
+    --accent-foreground: 0 0% 100%;
+
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 196 17% 70%;
+    --input: 196 17% 70%;
+    --ring: 204 27% 20%;
+
+    --radius: 0.5rem;
+
+    --sidebar: 203 44% 4%;
+    --sidebar-foreground: 0 0% 95%;
+    --sidebar-muted: 204 27% 20%;
+    --sidebar-active: 197 20% 46%;
+
+    --badge-trabalhista: 200 30% 92%;
+    --badge-trabalhista-fg: 200 24% 20%;
+    --badge-civil: 270 91% 95%;
+    --badge-civil-fg: 270 67% 33%;
+    --badge-criminal: 0 93% 95%;
+    --badge-criminal-fg: 0 74% 33%;
+    --badge-previdenciario: 142 76% 95%;
+    --badge-previdenciario-fg: 142 64% 28%;
+    --badge-tributario: 45 93% 85%;
+    --badge-tributario-fg: 45 93% 20%;
+
+    --badge-ativo: 142 76% 95%;
+    --badge-ativo-fg: 142 64% 36%;
+    --badge-audiencia: 200 30% 92%;
+    --badge-audiencia-fg: 200 24% 20%;
+    --badge-pendente: 45 93% 94%;
+    --badge-pendente-fg: 45 74% 36%;
+    --badge-encerrado: 195 16% 90%;
+    --badge-encerrado-fg: 197 20% 46%;
+    --badge-recurso: 25 95% 95%;
+    --badge-recurso-fg: 25 74% 36%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground font-sans antialiased;
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  }
+}

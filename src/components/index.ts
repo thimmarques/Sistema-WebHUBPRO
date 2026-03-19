@@ -1,0 +1,16 @@
+export { ClienteHeader } from './ClienteHeader';
+export { ClienteGeralTab } from './tabs/ClienteGeralTab';
+export { ClienteProcessosTab } from './tabs/ClienteProcessosTab';
+export { ClienteFinanceiroTab } from './tabs/ClienteFinanceiroTab';
+export { ProcessoGeralTab } from './tabs/ProcessoGeralTab';
+export { ProcessoMovimentacoesTab } from './tabs/ProcessoMovimentacoesTab';
+export { ProcessoPrazosTab } from './tabs/ProcessoPrazosTab';
+export { ProcessoCustasTab } from './tabs/ProcessoCustasTab';
+export { ProcessoDocumentosTab } from './tabs/ProcessoDocumentosTab';
+export { ProcessoDetalhe } from './ProcessoDetalhe';
+export { ClienteDocumentosTab } from './tabs/ClienteDocumentosTab';
+export { ClienteEventosTab } from './tabs/ClienteEventosTab';
+export { ClienteAuditoriaTab } from './tabs/ClienteAuditoriaTab';
+export { ModalConfirmacao } from './modals/ModalConfirmacao';
+export { ModalAudiencia } from './modals/ModalAudiencia';
+export { ModalNovoLancamento } from './modals/ModalNovoLancamento';
