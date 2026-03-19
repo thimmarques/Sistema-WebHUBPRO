@@ -20,9 +20,9 @@ import {
 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToastContext } from '@/contexts/ToastContext';
-import { MOCK_USERS } from '@/data/mockUsers';
-import { getEventos, saveEventos } from '@/data/mockEventos';
-import { getProcessos } from '@/data/mockProcessos';
+import { useEventos } from '@/hooks/useEventos';
+import { useProcessos } from '@/hooks/useProcessos';
+import { useEquipe } from '@/hooks/useEquipe';
 import {
   Evento,
   EventoTipo,
@@ -73,7 +73,10 @@ export default function AgendaPage(_props: AgendaPageProps) {
   const { showToast } = useToastContext();
   const admin = isAdmin();
 
-  const [allEventos, setAllEventos] = useState<Evento[]>(() => getEventos());
+  const { eventos: hookEventos, saveEvento, deleteEvento } = useEventos();
+  const { processos } = useProcessos();
+  const { membros } = useEquipe();
+
   const [monthOffset, setMonthOffset] = useState(0);
   const [selectedDate, setSelectedDate] = useState<Date>(() => new Date());
   const [typeFilters, setTypeFilters] = useState<Set<EventoTipo>>(new Set());
@@ -83,7 +86,8 @@ export default function AgendaPage(_props: AgendaPageProps) {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState<Evento | null>(null);
   const [prefillDate, setPrefillDate] = useState<string>('');
 
-  const allProcessos = useMemo(() => getProcessos(), []);
+  const allEventos = useMemo(() => hookEventos, [hookEventos]);
+  const allProcessos = useMemo(() => processos, [processos]);
 
   const eventos = useMemo(() => {
     let items = filterByUser(allEventos, currentUser!.id, admin);
@@ -156,7 +160,7 @@ export default function AgendaPage(_props: AgendaPageProps) {
   }
 
   function reload() {
-    setAllEventos(getEventos());
+    // Hooks handle automatic reload
   }
 
   function openNewModal(date?: string) {
@@ -172,13 +176,15 @@ export default function AgendaPage(_props: AgendaPageProps) {
     setShowNewModal(true);
   }
 
-  function handleDeleteEvent(evt: Evento) {
-    const updated = allEventos.filter((e) => e.id !== evt.id);
-    saveEventos(updated);
-    setAllEventos(updated);
-    setShowDeleteConfirm(null);
-    setShowDetailModal(null);
-    showToast('Evento excluído', 'success');
+  async function handleDeleteEvent(evt: Evento) {
+    try {
+      await deleteEvento(evt.id);
+      setShowDeleteConfirm(null);
+      setShowDetailModal(null);
+      showToast('Evento excluído', 'success');
+    } catch (error) {
+      showToast('Erro ao excluir evento', 'error');
+    }
   }
 
   /* ─── pill colors for calendar ─── */
@@ -366,7 +372,7 @@ export default function AgendaPage(_props: AgendaPageProps) {
                 </div>
               ) : (
                 selectedDayEvents.map((evt) => {
-                  const lawyer = MOCK_USERS.find((u) => u.id === evt.responsible_id);
+                  const lawyer = membros.find((u) => u.id === evt.responsible_id);
                   return (
                     <div
                       key={evt.id}
@@ -450,6 +456,8 @@ export default function AgendaPage(_props: AgendaPageProps) {
           currentUser={currentUser!}
           isAdmin={admin}
           editing={editingEvent}
+          membros={membros}
+          onSaveEvento={saveEvento}
         />
       )}
 
@@ -460,6 +468,8 @@ export default function AgendaPage(_props: AgendaPageProps) {
           onClose={() => setShowDetailModal(null)}
           onEdit={() => openEditModal(showDetailModal)}
           onDelete={() => setShowDeleteConfirm(showDetailModal)}
+          membros={membros}
+          processos={allProcessos}
         />
       )}
 
@@ -492,9 +502,11 @@ interface NovoEventoModalProps {
   currentUser: any;
   isAdmin: boolean;
   editing: Evento | null;
+  membros: any[];
+  onSaveEvento: (e: any) => Promise<void>;
 }
 
-function NovoEventoModal({ onClose, onSave, prefillDate, processos, currentUser, isAdmin, editing }: NovoEventoModalProps) {
+function NovoEventoModal({ onClose, onSave, prefillDate, processos, currentUser, isAdmin, editing, membros, onSaveEvento }: NovoEventoModalProps) {
   const [title, setTitle] = useState(editing?.title || '');
   const [tipo, setTipo] = useState<EventoTipo>(editing?.tipo || 'audiencia');
   const [processoId, setProcessoId] = useState(editing?.processo_id || '');
@@ -528,22 +540,15 @@ function NovoEventoModal({ onClose, onSave, prefillDate, processos, currentUser,
     if (!local) setLocal(p.vara);
   }
 
-  function handleSave() {
+  async function handleSave() {
     const errs: Record<string, boolean> = {};
     if (!title.trim()) errs.title = true;
     if (!data) errs.data = true;
     if (!horaInicio) errs.horaInicio = true;
     if (Object.keys(errs).length > 0) { setErrors(errs); return; }
 
-    const allEvt = getEventos();
-    if (editing) {
-      const idx = allEvt.findIndex((e) => e.id === editing.id);
-      if (idx >= 0) {
-        allEvt[idx] = { ...allEvt[idx], title, tipo, processo_id: processoId, cliente_nome: clienteNome, data, data_inicio: data, hora_inicio: horaInicio, hora_fim: horaFim, local, responsible_id: responsibleId, notes };
-      }
-    } else {
-      allEvt.push({
-        id: 'evt-' + Date.now(),
+    try {
+      const payload: any = {
         title,
         tipo,
         processo_id: processoId,
@@ -555,11 +560,19 @@ function NovoEventoModal({ onClose, onSave, prefillDate, processos, currentUser,
         local,
         responsible_id: responsibleId,
         notes,
-        created_at: new Date().toISOString().slice(0, 10),
-      });
+      };
+
+      if (editing) {
+        payload.id = editing.id;
+      } else {
+        payload.id = 'evento-' + Date.now(); // starts with evento- to trigger INSERT
+      }
+
+      await onSaveEvento(payload);
+      onSave();
+    } catch (error) {
+      console.error('Error saving event:', error);
     }
-    saveEventos(allEvt);
-    onSave();
   }
 
   const fieldClass = (name: string) =>
@@ -667,7 +680,7 @@ function NovoEventoModal({ onClose, onSave, prefillDate, processos, currentUser,
               <label className="block text-xs font-medium text-secondary-foreground mb-1">Responsável*</label>
               {isAdmin ? (
                 <select value={responsibleId} onChange={(e) => setResponsibleId(e.target.value)} className="w-full border border-border rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring">
-                  {MOCK_USERS.map((u) => (
+                  {membros.map((u) => (
                     <option key={u.id} value={u.id}>{u.name}</option>
                   ))}
                 </select>
@@ -704,11 +717,13 @@ interface EventDetailModalProps {
   onClose: () => void;
   onEdit: () => void;
   onDelete: () => void;
+  membros: any[];
+  processos: any[];
 }
 
-function EventDetailModal({ evento, onClose, onEdit, onDelete }: EventDetailModalProps) {
-  const lawyer = MOCK_USERS.find((u) => u.id === evento.responsible_id);
-  const processo = evento.processo_id ? getProcessos().find((p) => p.id === evento.processo_id) : null;
+function EventDetailModal({ evento, onClose, onEdit, onDelete, membros, processos }: EventDetailModalProps) {
+  const lawyer = membros.find((u) => u.id === evento.responsible_id);
+  const processo = evento.processo_id ? processos.find((p) => p.id === evento.processo_id) : null;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center" onClick={onClose}>

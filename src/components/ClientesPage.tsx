@@ -12,12 +12,11 @@ import {
   ChevronRight,
   Users,
   Star,
+  Loader2,
 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToastContext } from '@/contexts/ToastContext';
-import { MOCK_USERS } from '@/data/mockUsers';
-import { loadClientes, saveClientes } from '@/data/mockClientes';
-import { filterByUser } from '@/components/Dashboard';
+import { useClientes, useEquipe } from '@/hooks';
 import {
   Cliente,
   getClienteName,
@@ -33,15 +32,6 @@ import ClienteSlideOver from './ClienteSlideOver';
 
 const ITEMS_PER_PAGE = 10;
 
-// mock process counts per client
-const processCountMap: Record<string, number> = {
-  'cli-001': 3,
-  'cli-002': 5,
-  'cli-003': 2,
-  'cli-004': 1,
-  'cli-005': 2,
-};
-
 type SortField = 'name' | 'area' | 'status';
 type SortDir = 'asc' | 'desc';
 
@@ -50,11 +40,13 @@ interface ClientesPageProps {
 }
 
 export default function ClientesPage({ onNavigateDetail }: ClientesPageProps) {
-  const { currentUser, isAdmin } = useAuth();
+  const { isAdmin } = useAuth();
   const { showToast } = useToastContext();
   const admin = isAdmin();
 
-  const [allClientes, setAllClientes] = useState<Cliente[]>(() => loadClientes());
+  const { clientes, loading: loadingClientes, saveCliente, deleteCliente } = useClientes();
+  const { membros } = useEquipe();
+
   const [search, setSearch] = useState('');
   const [filterType, setFilterType] = useState<'' | 'pf' | 'pj'>('');
   const [filterArea, setFilterArea] = useState('');
@@ -87,7 +79,7 @@ export default function ClientesPage({ onNavigateDetail }: ClientesPageProps) {
 
   // filter
   const filtered = useMemo(() => {
-    let items = filterByUser(allClientes, currentUser!.id, admin);
+    let items = clientes;
 
     if (search) {
       const q = search.toLowerCase();
@@ -111,7 +103,7 @@ export default function ClientesPage({ onNavigateDetail }: ClientesPageProps) {
     });
 
     return items;
-  }, [allClientes, currentUser, admin, search, filterType, filterArea, filterStatus, sortField, sortDir]);
+  }, [clientes, search, filterType, filterArea, filterStatus, sortField, sortDir]);
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / ITEMS_PER_PAGE));
   const pageItems = filtered.slice((page - 1) * ITEMS_PER_PAGE, page * ITEMS_PER_PAGE);
@@ -126,33 +118,26 @@ export default function ClientesPage({ onNavigateDetail }: ClientesPageProps) {
       sortDir === 'asc' ? <ChevronUp className="w-3 h-3 inline ml-1" /> : <ChevronDown className="w-3 h-3 inline ml-1" />
     ) : null;
 
-  const handleSave = (cliente: Cliente) => {
-    setAllClientes((prev) => {
-      const idx = prev.findIndex((c) => c.id === cliente.id);
-      let next: Cliente[];
-      if (idx >= 0) {
-        next = [...prev];
-        next[idx] = cliente;
-      } else {
-        next = [...prev, cliente];
-      }
-      saveClientes(next);
-      return next;
-    });
-    setSlideOpen(false);
-    setEditCliente(null);
-    showToast('Cliente cadastrado com sucesso', 'success');
+  const handleSave = async (cliente: Cliente) => {
+    try {
+      await saveCliente(cliente);
+      setSlideOpen(false);
+      setEditCliente(null);
+      showToast('Cliente salvo com sucesso', 'success');
+    } catch (err) {
+      showToast('Erro ao salvar cliente', 'error');
+    }
   };
 
-  const handleDelete = (id: string) => {
-    setAllClientes((prev) => {
-      const next = prev.filter((c) => c.id !== id);
-      saveClientes(next);
-      return next;
-    });
-    setDeleteId(null);
-    setOpenDropdown(null);
-    showToast('Cliente removido', 'info');
+  const handleDelete = async (id: string) => {
+    try {
+      await deleteCliente(id);
+      setDeleteId(null);
+      setOpenDropdown(null);
+      showToast('Cliente removido', 'info');
+    } catch (err) {
+      showToast('Erro ao remover cliente', 'error');
+    }
   };
 
   const openNew = () => {
@@ -166,7 +151,7 @@ export default function ClientesPage({ onNavigateDetail }: ClientesPageProps) {
     setOpenDropdown(null);
   };
 
-  const getUserById = (id: string) => MOCK_USERS.find((u) => u.id === id);
+  const getMembroById = (id: string) => membros.find((u) => u.id === id);
 
   return (
     <div>
@@ -216,7 +201,9 @@ export default function ClientesPage({ onNavigateDetail }: ClientesPageProps) {
       </div>
 
       {/* Table or empty */}
-      {filtered.length === 0 ? (
+      {loadingClientes ? (
+        <div className="flex justify-center py-24"><Loader2 className="w-8 h-8 animate-spin text-primary" /></div>
+      ) : filtered.length === 0 ? (
         <div className="bg-card border border-border rounded-lg">
           <EmptyState
             icon={Users}
@@ -228,7 +215,7 @@ export default function ClientesPage({ onNavigateDetail }: ClientesPageProps) {
         </div>
       ) : (
         <div className="bg-card border border-border rounded-lg shadow-sm overflow-hidden">
-          <table className="w-full">
+          <table className="w-full text-left">
             <thead>
               <tr className="bg-muted/50 border-b border-border">
                 <th className="text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider px-4 py-3 cursor-pointer select-none" onClick={() => toggleSort('name')}>
@@ -239,7 +226,6 @@ export default function ClientesPage({ onNavigateDetail }: ClientesPageProps) {
                   Área <SortIcon field="area" />
                 </th>
                 <th className="text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider px-4 py-3">Polo</th>
-                <th className="text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider px-4 py-3">Processos</th>
                 <th className="text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider px-4 py-3 cursor-pointer select-none" onClick={() => toggleSort('status')}>
                   Status <SortIcon field="status" />
                 </th>
@@ -261,11 +247,10 @@ export default function ClientesPage({ onNavigateDetail }: ClientesPageProps) {
                   .join('')
                   .toUpperCase()
                   .slice(0, 2);
-                const responsible = getUserById(c.responsible_id);
-                const processCount = processCountMap[c.id] || Math.floor(Math.random() * 4) + 1;
+                const responsible = getMembroById(c.responsible_id || '');
 
                 return (
-                  <tr key={c.id} className="hover:bg-muted/50 transition-colors border-b border-border/50 last:border-0">
+                  <tr key={c.id} className="hover:bg-muted/50 transition-colors border-b border-border/50 last:border-0 border-l-4 border-l-transparent hover:border-l-primary/30">
                     {/* CLIENTE */}
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-3">
@@ -288,7 +273,7 @@ export default function ClientesPage({ onNavigateDetail }: ClientesPageProps) {
                       <span className={`inline-flex items-center text-xs font-medium px-2 py-0.5 rounded-full ${
                         c.type === 'pf' ? 'bg-muted text-muted-foreground' : 'bg-primary/20 text-primary'
                       }`}>
-                        {c.type}
+                        {c.type.toUpperCase()}
                       </span>
                     </td>
                     {/* ÁREA */}
@@ -298,12 +283,6 @@ export default function ClientesPage({ onNavigateDetail }: ClientesPageProps) {
                     {/* POLO */}
                     <td className="px-4 py-3 text-sm text-muted-foreground">
                       {getPoloLabel((c as any).polo || '')}
-                    </td>
-                    {/* PROCESSOS */}
-                    <td className="px-4 py-3">
-                      <span className="bg-primary/10 text-primary text-xs font-semibold px-2 py-1 rounded-md">
-                        {processCount}
-                      </span>
                     </td>
                     {/* STATUS */}
                     <td className="px-4 py-3">
@@ -339,7 +318,7 @@ export default function ClientesPage({ onNavigateDetail }: ClientesPageProps) {
                           <div className="absolute right-0 top-full mt-1 bg-card border border-border shadow-lg rounded-lg py-1 z-10 w-40">
                             <button
                               onClick={() => { onNavigateDetail?.(c.id); setOpenDropdown(null); }}
-                              className="w-full flex items-center gap-2 px-3 py-2 text-sm text-foreground hover:bg-muted/50 transition-colors"
+                               className="w-full flex items-center gap-2 px-3 py-2 text-sm text-foreground hover:bg-muted/50 transition-colors"
                             >
                               <Eye className="w-4 h-4" />
                               Ver Detalhes
@@ -395,12 +374,14 @@ export default function ClientesPage({ onNavigateDetail }: ClientesPageProps) {
       )}
 
       {/* Slide-over */}
-      <ClienteSlideOver
-        open={slideOpen}
-        onClose={() => { setSlideOpen(false); setEditCliente(null); }}
-        onSave={handleSave}
-        editCliente={editCliente}
-      />
+      {slideOpen && (
+        <ClienteSlideOver
+          open={slideOpen}
+          onClose={() => { setSlideOpen(false); setEditCliente(null); }}
+          onSave={handleSave}
+          editCliente={editCliente}
+        />
+      )}
 
       {/* Delete confirmation modal */}
       {deleteId && (

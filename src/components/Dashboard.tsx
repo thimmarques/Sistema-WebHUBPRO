@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import {
   Briefcase,
   Users,
@@ -9,41 +9,44 @@ import {
   AlertTriangle,
   Percent,
   LucideIcon,
+  Loader2,
 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
+import { useClientes } from '@/hooks/useClientes';
+import { useProcessos } from '@/hooks/useProcessos';
+import { useEventos } from '@/hooks/useEventos';
+import { useLancamentos } from '@/hooks/useLancamentos';
+import { useAuditoria } from '@/hooks/useAuditoria';
 import StatusBadge from './StatusBadge';
-
-/* ── helpers ── */
-
-export function filterByUser<T extends { responsible_id: string }>(
-  items: T[],
-  currentUserId: string,
-  isAdmin: boolean
-): T[] {
-  return isAdmin ? items : items.filter((i) => i.responsible_id === currentUserId);
-}
+import { format, isWithinInterval, startOfWeek, endOfWeek, startOfMonth, endOfMonth, isAfter, parseISO } from 'date-fns';
+import { ptBR } from 'date-fns/locale';
 
 /* ── KPI Card ── */
 
 interface KpiCardProps {
   label: string;
-  value: string;
+  value: string | number;
   icon: LucideIcon;
   iconBg: string;
   iconColor: string;
   subtitle?: string;
   subtitleClass?: string;
+  loading?: boolean;
 }
 
-function KpiCard({ label, value, icon: Icon, iconBg, iconColor, subtitle, subtitleClass }: KpiCardProps) {
+function KpiCard({ label, value, icon: Icon, iconBg, iconColor, subtitle, subtitleClass, loading }: KpiCardProps) {
   return (
     <div className="bg-card border border-border shadow-sm rounded-lg p-5 flex items-start gap-4">
       <div className={`${iconBg} ${iconColor} rounded-lg p-2.5 shrink-0`}>
         <Icon className="w-5 h-5" />
       </div>
-      <div className="min-w-0">
+      <div className="min-w-0 flex-1">
         <p className="text-xs text-muted-foreground font-medium uppercase tracking-wide">{label}</p>
-        <p className="text-2xl font-bold text-foreground mt-0.5">{value}</p>
+        {loading ? (
+          <div className="h-8 w-16 bg-muted animate-pulse rounded mt-0.5" />
+        ) : (
+          <p className="text-2xl font-bold text-foreground mt-0.5">{value}</p>
+        )}
         {subtitle && (
           <p className={`text-xs mt-1 ${subtitleClass || 'text-muted-foreground'}`}>{subtitle}</p>
         )}
@@ -52,140 +55,244 @@ function KpiCard({ label, value, icon: Icon, iconBg, iconColor, subtitle, subtit
   );
 }
 
-/* ── Activity item ── */
-
-interface Activity {
-  id: number;
-  text: string;
-  time: string;
-  active?: boolean;
-}
-
-const activities: Activity[] = [
-  { id: 1, text: 'Petição inicial protocolada no processo 0001234-55.2024.5.02.0001', time: 'Há 25 min', active: true },
-  { id: 2, text: 'Audiência agendada para Maria Silva — Vara do Trabalho 3ª Região', time: 'Há 1 hora' },
-  { id: 3, text: 'Prazo fatal adicionado: contestação até 28/02/2026', time: 'Há 2 horas' },
-  { id: 4, text: 'Novo cliente cadastrado: Empresa ABC Ltda.', time: 'Há 4 horas' },
-  { id: 5, text: 'Honorários recebidos — Processo João Pereira (R$ 4.500,00)', time: 'Ontem 17:30' },
-];
-
-/* ── Hearing item ── */
-
-interface Hearing {
-  id: number;
-  day: string;
-  month: string;
-  process: string;
-  client: string;
-  area: 'trabalhista' | 'civil' | 'criminal' | 'previdenciario' | 'tributario';
-}
-
-const hearings: Hearing[] = [
-  { id: 1, day: '22', month: 'FEV', process: '0001234-55.2024', client: 'Maria Silva', area: 'trabalhista' },
-  { id: 2, day: '24', month: 'FEV', process: '0005678-12.2024', client: 'João Pereira', area: 'civil' },
-  { id: 3, day: '28', month: 'FEV', process: '0009012-89.2024', client: 'Ana Costa', area: 'criminal' },
-  { id: 4, day: '05', month: 'MAR', process: '0012345-67.2024', client: 'Empresa XYZ', area: 'tributario' },
-];
-
-/* ── Area distribution ── */
-
-interface AreaStat {
-  area: 'trabalhista' | 'civil' | 'criminal' | 'previdenciario' | 'tributario';
-  count: number;
-  total: number;
-  barColor: string;
-}
-
-const areaStats: AreaStat[] = [
-  { area: 'trabalhista', count: 18, total: 45, barColor: 'bg-primary/80' },
-  { area: 'civil', count: 12, total: 45, barColor: 'bg-purple-500' },
-  { area: 'criminal', count: 6, total: 45, barColor: 'bg-red-500' },
-  { area: 'previdenciario', count: 4, total: 45, barColor: 'bg-green-500' },
-  { area: 'tributario', count: 5, total: 45, barColor: 'bg-amber-500' },
-];
-
 /* ── Dashboard ── */
 
 export default function Dashboard() {
   const { currentUser, isAdmin } = useAuth();
   const admin = isAdmin();
 
+  const { clientes, loading: loadingClientes } = useClientes();
+  const { processos, loading: loadingProcessos } = useProcessos();
+  const { eventos, loading: loadingEventos } = useEventos();
+  const { lancamentos, loading: loadingLancamentos } = useLancamentos();
+  const { atividades, loading: loadingAtividades } = useAuditoria();
+
+  const metrics = useMemo(() => {
+    const now = new Date();
+    const weekStart = startOfWeek(now);
+    const weekEnd = endOfWeek(now);
+    const monthStart = startOfMonth(now);
+    const monthEnd = endOfMonth(now);
+
+    // Processos Ativos
+    const ativosCount = processos.filter(p => p.status !== 'encerrado').length;
+    
+    // Próxima Audiência
+    const proximasAudiencias = eventos
+      .filter(e => e.tipo === 'audiencia' && isAfter(parseISO(e.data_inicio), now))
+      .sort((a, b) => parseISO(a.data_inicio).getTime() - parseISO(b.data_inicio).getTime());
+    
+    const proximaAudiencia = proximasAudiencias[0];
+    const proximasAudienciasDisplay = proximasAudiencias.slice(0, 4);
+
+    // Prazos da Semana
+    const prazosSemana = eventos.filter(e => 
+      e.tipo === 'prazo' && 
+      isWithinInterval(parseISO(e.data_inicio), { start: weekStart, end: weekEnd })
+    );
+
+    // Financeiro (Admin)
+    const receitasAtuais = lancamentos.filter(l => l.tipo === 'receita');
+    const aReceber = receitasAtuais
+      .filter(l => !l.status || l.status === 'pendente')
+      .reduce((acc, curr) => acc + (Number(curr.valor) || 0), 0);
+    
+    const recebidoMes = receitasAtuais
+      .filter(l => l.status === 'pago' && isWithinInterval(parseISO(l.data_pagamento || l.data), { start: monthStart, end: monthEnd }))
+      .reduce((acc, curr) => acc + (Number(curr.valor) || 0), 0);
+    
+    const emAtraso = receitasAtuais
+      .filter(l => (!l.status || l.status === 'pendente') && isAfter(now, parseISO(l.data)))
+      .reduce((acc, curr) => acc + (Number(curr.valor) || 0), 0);
+
+    // Distribuição por Área
+    const areas: Record<string, number> = {
+      trabalhista: 0,
+      civil: 0,
+      criminal: 0,
+      previdenciario: 0,
+      tributario: 0
+    };
+
+    processos.forEach(p => {
+      if (p.practice_area && areas[p.practice_area] !== undefined) {
+        areas[p.practice_area]++;
+      }
+    });
+
+    const totalProcessos = processos.length || 1;
+
+    const areaStats = [
+      { area: 'trabalhista', count: areas.trabalhista, barColor: 'bg-primary/80' },
+      { area: 'civil', count: areas.civil, barColor: 'bg-purple-500' },
+      { area: 'criminal', count: areas.criminal, barColor: 'bg-red-500' },
+      { area: 'previdenciario', count: areas.previdenciario, barColor: 'bg-green-500' },
+      { area: 'tributario', count: areas.tributario, barColor: 'bg-amber-500' },
+    ];
+
+    return {
+      ativosCount,
+      clientesCount: clientes.length,
+      proximaAudiencia,
+      prazosSemana: prazosSemana.length,
+      aReceber,
+      recebidoMes,
+      emAtraso,
+      areaStats,
+      totalProcessos,
+      audienciasList: proximasAudienciasDisplay
+    };
+  }, [processos, clientes, eventos, lancamentos]);
+
+  const isLoading = loadingClientes || loadingProcessos || loadingEventos || loadingLancamentos;
+
   return (
     <div className="space-y-6">
       {/* Section A — KPI Cards */}
-      <div className="grid grid-cols-4 gap-4">
-        <KpiCard label="Meus Processos Ativos" value="12" icon={Briefcase} iconBg="bg-primary/10" iconColor="text-primary" subtitle="+2 este mês" />
-        <KpiCard label="Meus Clientes" value="8" icon={Users} iconBg="bg-green-50" iconColor="text-green-600" subtitle="1 novo esta semana" />
-        <KpiCard label="Próxima Audiência" value="Amanhã 14h" icon={Scale} iconBg="bg-purple-50" iconColor="text-purple-600" subtitle="Vara do Trabalho 3ª" />
-        <KpiCard label="Prazos Esta Semana" value="3" icon={AlertCircle} iconBg="bg-amber-50" iconColor="text-amber-600" subtitle="1 prazo fatal" subtitleClass="text-red-500" />
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        <KpiCard 
+          label="Processos Ativos" 
+          value={metrics.ativosCount} 
+          icon={Briefcase} 
+          iconBg="bg-primary/10" 
+          iconColor="text-primary" 
+          loading={loadingProcessos}
+        />
+        <KpiCard 
+          label="Total de Clientes" 
+          value={metrics.clientesCount} 
+          icon={Users} 
+          iconBg="bg-green-50" 
+          iconColor="text-green-600" 
+          loading={loadingClientes}
+        />
+        <KpiCard 
+          label="Próxima Audiência" 
+          value={metrics.proximaAudiencia ? format(parseISO(metrics.proximaAudiencia.data_inicio), "dd/MM HH:mm") : 'Nenhuma'} 
+          icon={Scale} 
+          iconBg="bg-purple-50" 
+          iconColor="text-purple-600" 
+          subtitle={metrics.proximaAudiencia?.title}
+          loading={loadingEventos}
+        />
+        <KpiCard 
+          label="Prazos Esta Semana" 
+          value={metrics.prazosSemana} 
+          icon={AlertCircle} 
+          iconBg="bg-amber-50" 
+          iconColor="text-amber-600" 
+          subtitle={`${metrics.prazosSemana} prazos identificados`} 
+          loading={loadingEventos}
+        />
       </div>
 
       {admin && (
-        <div className="grid grid-cols-4 gap-4">
-          <KpiCard label="A Receber" value="R$ 84.500" icon={DollarSign} iconBg="bg-emerald-50" iconColor="text-emerald-600" />
-          <KpiCard label="Recebido este Mês" value="R$ 32.000" icon={TrendingUp} iconBg="bg-teal-50" iconColor="text-teal-600" />
-          <KpiCard label="Em Atraso" value="R$ 8.400" icon={AlertTriangle} iconBg="bg-red-50" iconColor="text-red-600" />
-          <KpiCard label="Inadimplência" value="9,2%" icon={Percent} iconBg="bg-orange-50" iconColor="text-orange-600" />
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+          <KpiCard 
+            label="A Receber" 
+            value={new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(metrics.aReceber)} 
+            icon={DollarSign} 
+            iconBg="bg-emerald-50" 
+            iconColor="text-emerald-600" 
+            loading={loadingLancamentos}
+          />
+          <KpiCard 
+            label="Recebido este Mês" 
+            value={new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(metrics.recebidoMes)} 
+            icon={TrendingUp} 
+            iconBg="bg-teal-50" 
+            iconColor="text-teal-600" 
+            loading={loadingLancamentos}
+          />
+          <KpiCard 
+            label="Em Atraso" 
+            value={new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(metrics.emAtraso)} 
+            icon={AlertTriangle} 
+            iconBg="bg-red-50" 
+            iconColor="text-red-600" 
+            loading={loadingLancamentos}
+          />
+          <KpiCard 
+            label="Inadimplência" 
+            value={`${metrics.aReceber > 0 ? ((metrics.emAtraso / metrics.aReceber) * 100).toFixed(1) : 0}%`} 
+            icon={Percent} 
+            iconBg="bg-orange-50" 
+            iconColor="text-orange-600" 
+            loading={loadingLancamentos}
+          />
         </div>
       )}
 
       {/* Section B — Activity + Hearings */}
-      <div className="grid grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Left — Activity */}
-        <div className="col-span-2 bg-card border border-border rounded-lg p-6">
+        <div className="lg:col-span-2 bg-card border border-border rounded-lg p-6">
           <h2 className="text-base font-semibold text-foreground mb-5">Atividade Recente</h2>
-          <div className="relative ml-3 border-l-2 border-border space-y-5 pl-5">
-            {activities.map((a) => (
-              <div key={a.id} className="relative">
-                <span
-                  className={`absolute -left-[25px] top-1.5 w-2 h-2 rounded-full ${
-                    a.active ? 'bg-primary' : 'bg-muted-foreground/40'
-                  }`}
-                />
-                <p className="text-sm text-foreground">{a.text}</p>
-                <p className="text-xs text-muted-foreground mt-0.5">{a.time}</p>
-              </div>
-            ))}
-          </div>
+          {loadingAtividades ? (
+            <div className="flex justify-center py-12"><Loader2 className="animate-spin text-muted-foreground" /></div>
+          ) : atividades.length > 0 ? (
+            <div className="relative ml-3 border-l-2 border-border space-y-5 pl-5">
+              {atividades.slice(0, 5).map((a) => (
+                <div key={a.id} className="relative">
+                  <span className="absolute -left-[25px] top-1.5 w-2 h-2 rounded-full bg-primary" />
+                  <p className="text-sm text-foreground">{a.descricao}</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    {format(parseISO(a.created_at), "dd/MM/yyyy HH:mm", { locale: ptBR })}
+                  </p>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="text-center py-12 text-muted-foreground text-sm">Nenhuma atividade registrada.</div>
+          )}
         </div>
 
         {/* Right — Hearings */}
         <div className="col-span-1 bg-card border border-border rounded-lg p-6">
           <h2 className="text-base font-semibold text-foreground mb-5">Próximas Audiências</h2>
-          <div className="space-y-4">
-            {hearings.map((h) => (
-              <div key={h.id} className="flex items-start gap-3">
-                <div className="bg-muted/50 rounded-lg p-2 text-center min-w-[48px]">
-                  <p className="text-xl font-bold text-foreground leading-tight">{h.day}</p>
-                  <p className="text-xs text-muted-foreground uppercase">{h.month}</p>
-                </div>
-                <div className="min-w-0">
-                  <p className="text-sm font-medium text-foreground truncate">{h.client}</p>
-                  <p className="text-xs text-muted-foreground mt-0.5">{h.process}</p>
-                  <div className="mt-1">
-                    <StatusBadge variant={h.area} />
+          {loadingEventos ? (
+            <div className="flex justify-center py-12"><Loader2 className="animate-spin text-muted-foreground" /></div>
+          ) : metrics.audienciasList.length > 0 ? (
+            <div className="space-y-4">
+              {metrics.audienciasList.map((h) => {
+                const date = parseISO(h.data_inicio);
+                return (
+                  <div key={h.id} className="flex items-start gap-3">
+                    <div className="bg-muted/50 rounded-lg p-2 text-center min-w-[48px]">
+                      <p className="text-xl font-bold text-foreground leading-tight">{format(date, 'dd')}</p>
+                      <p className="text-xs text-muted-foreground uppercase">{format(date, 'MMM', { locale: ptBR })}</p>
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium text-foreground truncate">{h.title}</p>
+                      <p className="text-xs text-muted-foreground mt-0.5">Processo: {h.processo_id?.slice(0,8)}...</p>
+                      <div className="mt-1">
+                        <StatusBadge variant="audiencia" />
+                      </div>
+                    </div>
                   </div>
-                </div>
-              </div>
-            ))}
-          </div>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="text-center py-12 text-muted-foreground text-sm">Nenhuma audiência agendada.</div>
+          )}
         </div>
       </div>
 
       {/* Section C — Area Distribution */}
       <div className="bg-card border border-border rounded-lg p-6">
-        <h2 className="text-base font-semibold text-foreground mb-5">Distribuição por Área</h2>
-        <div className="grid grid-cols-5 gap-6">
-          {areaStats.map((s) => (
+        <h2 className="text-base font-semibold text-foreground mb-5">Distribuição por Área (Processos)</h2>
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-6">
+          {metrics.areaStats.map((s) => (
             <div key={s.area}>
               <div className="flex items-center justify-between mb-2">
-                <StatusBadge variant={s.area} />
+                <StatusBadge variant={s.area as any} />
                 <span className="text-sm font-semibold text-foreground">{s.count}</span>
               </div>
               <div className="bg-muted rounded-full h-2 overflow-hidden">
                 <div
                   className={`${s.barColor} h-2 rounded-full transition-all`}
-                  style={{ width: `${(s.count / s.total) * 100}%` }}
+                  style={{ width: `${(s.count / metrics.totalProcessos) * 100}%` }}
                 />
               </div>
             </div>

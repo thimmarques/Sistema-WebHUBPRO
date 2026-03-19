@@ -1,18 +1,19 @@
-import React, { useState, useMemo, useCallback } from 'react';
+import React, { useState, useMemo, useCallback, useEffect } from 'react';
 import {
   Plus, Search, Download, Wallet, TrendingUp, AlertTriangle, Percent,
   MoreHorizontal, Eye, Edit, Trash2, CheckCircle, DollarSign, X, Info, ChevronUp, ChevronDown, ChevronLeft, ChevronRight,
+  Loader2,
 } from 'lucide-react';
-import { useAuth } from '@/contexts/AuthContext';
+import { useAuth } from '@/hooks/useAuth';
 import { useToastContext } from '@/contexts/ToastContext';
+import { useLancamentos } from '@/hooks/useLancamentos';
+import { useEquipe } from '@/hooks/useEquipe';
+import { useClientes } from '@/hooks/useClientes';
+import { useProcessos } from '@/hooks/useProcessos';
 import AccessDeniedScreen from './AccessDeniedScreen';
 import EmptyState from './EmptyState';
 import UserAvatar from './UserAvatar';
 import StatusBadge from './StatusBadge';
-import { MOCK_USERS } from '@/data/mockUsers';
-import { loadLancamentos, saveLancamentos } from '@/data/mockLancamentos';
-import { loadClientes } from '@/data/mockClientes';
-import { getProcessos } from '@/data/mockProcessos';
 import {
   Lancamento, LancamentoStatus, LancamentoTipo,
   lancamentoStatusLabels, lancamentoStatusColors,
@@ -32,6 +33,7 @@ function formatDate(d: string): string {
 }
 
 function diffDays(dateStr: string): number {
+  if (!dateStr) return 0;
   const today = new Date();
   today.setHours(0, 0, 0, 0);
   const target = new Date(dateStr + 'T00:00:00');
@@ -39,6 +41,7 @@ function diffDays(dateStr: string): number {
 }
 
 function getInitials(name: string): string {
+  if (!name) return '??';
   return name.replace(/^(Dr\.|Dra\.)\s+/i, '').split(' ').filter(Boolean).map(w => w[0]).join('').toUpperCase().slice(0, 2);
 }
 
@@ -47,9 +50,13 @@ const ITEMS_PER_PAGE = 10;
 type SortField = 'cliente_nome' | 'numero_cnj' | 'responsible_id' | 'tipo' | 'descricao' | 'vencimento' | 'valor' | 'status';
 
 export default function FinanceiroPage() {
-  const { currentUser, isAdmin } = useAuth();
+  const { currentUser } = useAuth();
+  const isAdmin = currentUser?.role === 'admin' || currentUser?.role === 'socio';
   const { showToast } = useToastContext();
-  const [allLancamentos, setAllLancamentos] = useState<Lancamento[]>(() => loadLancamentos());
+  
+  const { lancamentos, loading: loadingLancamentos, saveLancamento, deleteLancamento } = useLancamentos();
+  const { membros } = useEquipe();
+  
   const [search, setSearch] = useState('');
   const [filterAdvogado, setFilterAdvogado] = useState('');
   const [filterTipo, setFilterTipo] = useState('');
@@ -58,49 +65,73 @@ export default function FinanceiroPage() {
   const [filterPeriodo, setFilterPeriodo] = useState('');
   const [sortField, setSortField] = useState<SortField>('vencimento');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
+
+  const toggleSort = (f: SortField) => {
+    if (sortField === f) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
+    else { setSortField(f); setSortDir('desc'); }
+  };
+
+  const SortIcon = ({ field }: { field: SortField }) => {
+    if (sortField !== field) return <MoreHorizontal className="w-3 h-3 opacity-20" />;
+    return sortDir === 'asc' ? <ChevronUp className="w-4 h-4 text-primary" /> : <ChevronDown className="w-4 h-4 text-primary" />;
+  };
   const [page, setPage] = useState(1);
   const [showModal, setShowModal] = useState(false);
   const [showPagoModal, setShowPagoModal] = useState<Lancamento | null>(null);
   const [pagoDate, setPagoDate] = useState(new Date().toISOString().slice(0, 10));
   const [dropdownOpen, setDropdownOpen] = useState<string | null>(null);
 
-  // KPIs (always from ALL data)
+  // KPIs
   const metrics = useMemo(() => {
     const now = new Date();
     const currentYM = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
-    const totalAReceber = allLancamentos.filter(l => l.status === 'pendente' || l.status === 'parcelado').reduce((s, l) => s + l.valor, 0);
-    const pagoThisMonth = allLancamentos.filter(l => l.status === 'pago' && l.data_pagamento.startsWith(currentYM));
-    const totalRecebidoMes = pagoThisMonth.reduce((s, l) => s + l.valor, 0);
-    const vencidos = allLancamentos.filter(l => l.status === 'vencido');
-    const totalVencido = vencidos.reduce((s, l) => s + l.valor, 0);
+    const totalAReceber = lancamentos.filter(l => l.status === 'pendente' || l.status === 'parcelado').reduce((s, l) => s + (l.valor || 0), 0);
+    const pagoThisMonth = lancamentos.filter(l => l.status === 'pago' && l.data_pagamento?.startsWith(currentYM));
+    const totalRecebidoMes = pagoThisMonth.reduce((s, l) => s + (l.valor || 0), 0);
+    const vencidos = lancamentos.filter(l => l.status === 'vencido' || (l.status === 'pendente' && l.vencimento && diffDays(l.vencimento) < 0));
+    const totalVencido = vencidos.reduce((s, l) => s + (l.valor || 0), 0);
     const denom = totalAReceber + totalVencido + totalRecebidoMes;
     const taxaInadimplencia = denom > 0 ? (totalVencido / denom) * 100 : 0;
-    const pendenteCount = allLancamentos.filter(l => l.status === 'pendente' || l.status === 'parcelado').length;
+    const pendenteCount = lancamentos.filter(l => l.status === 'pendente' || l.status === 'parcelado').length;
     return { totalAReceber, totalRecebidoMes, totalVencido, taxaInadimplencia, pendenteCount, pagoThisMonthCount: pagoThisMonth.length, vencidoCount: vencidos.length };
-  }, [allLancamentos]);
+  }, [lancamentos]);
 
-  // Resumo por advogado (always ALL data)
+  // Resumo por advogado
   const resumoPorAdvogado = useMemo(() => {
     const map: Record<string, { aReceber: number; recebido: number }> = {};
-    allLancamentos.forEach(l => {
-      if (!map[l.responsible_id]) map[l.responsible_id] = { aReceber: 0, recebido: 0 };
-      if (l.status === 'pago') map[l.responsible_id].recebido += l.valor;
-      else map[l.responsible_id].aReceber += l.valor;
+    lancamentos.forEach(l => {
+      const respId = l.responsible_id || 'unassigned';
+      if (!map[respId]) map[respId] = { aReceber: 0, recebido: 0 };
+      if (l.status === 'pago') map[respId].recebido += (l.valor || 0);
+      else map[respId].aReceber += (l.valor || 0);
     });
     return Object.entries(map).map(([uid, v]) => {
-      const user = MOCK_USERS.find(u => u.id === uid);
+      const user = membros.find(u => u.id === uid);
       const total = v.aReceber + v.recebido;
-      return { uid, name: user?.name || uid, avatar_color: user?.avatar_color || 'bg-accent', practice_areas: user?.practice_areas || [], aReceber: v.aReceber, recebido: v.recebido, total, taxaCobranca: total > 0 ? (v.recebido / total) * 100 : 0 };
+      return { 
+        uid, 
+        name: user?.name || 'Não atribuído', 
+        avatar_color: 'bg-primary/10', 
+        practice_areas: [], 
+        aReceber: v.aReceber, 
+        recebido: v.recebido, 
+        total, 
+        taxaCobranca: total > 0 ? (v.recebido / total) * 100 : 0 
+      };
     }).sort((a, b) => b.total - a.total);
-  }, [allLancamentos]);
+  }, [lancamentos, membros]);
 
   const hasActiveFilters = search || filterAdvogado || filterTipo || filterStatus || filterArea || filterPeriodo;
 
   const filtered = useMemo(() => {
-    let items = [...allLancamentos];
+    let items = [...lancamentos];
     if (search) {
       const s = search.toLowerCase();
-      items = items.filter(l => l.cliente_nome.toLowerCase().includes(s) || l.numero_cnj.includes(s) || l.descricao.toLowerCase().includes(s));
+      items = items.filter(l => 
+        (l.cliente_nome && l.cliente_nome.toLowerCase().includes(s)) || 
+        (l.numero_cnj && l.numero_cnj.includes(s)) || 
+        (l.descricao && l.descricao.toLowerCase().includes(s))
+      );
     }
     if (filterAdvogado) items = items.filter(l => l.responsible_id === filterAdvogado);
     if (filterTipo) items = items.filter(l => l.tipo === filterTipo);
@@ -111,7 +142,9 @@ export default function FinanceiroPage() {
       const y = now.getFullYear();
       const m = now.getMonth();
       items = items.filter(l => {
-        const d = new Date(l.vencimento || l.created_at);
+        const dStr = l.vencimento || l.data || l.created_at;
+        if (!dStr) return true;
+        const d = new Date(dStr);
         if (filterPeriodo === 'este_mes') return d.getFullYear() === y && d.getMonth() === m;
         if (filterPeriodo === 'mes_anterior') { const pm = m === 0 ? 11 : m - 1; const py = m === 0 ? y - 1 : y; return d.getFullYear() === py && d.getMonth() === pm; }
         if (filterPeriodo === 'trimestre') { const q = Math.floor(m / 3); return d.getFullYear() === y && Math.floor(d.getMonth() / 3) === q; }
@@ -122,240 +155,227 @@ export default function FinanceiroPage() {
     items.sort((a, b) => {
       let va: any = (a as any)[sortField];
       let vb: any = (b as any)[sortField];
-      if (sortField === 'valor') { va = a.valor; vb = b.valor; }
+      if (sortField === 'valor') { va = a.valor || 0; vb = b.valor || 0; }
       else { va = String(va || '').toLowerCase(); vb = String(vb || '').toLowerCase(); }
       if (va < vb) return sortDir === 'asc' ? -1 : 1;
       if (va > vb) return sortDir === 'asc' ? 1 : -1;
       return 0;
     });
     return items;
-  }, [allLancamentos, search, filterAdvogado, filterTipo, filterStatus, filterArea, filterPeriodo, sortField, sortDir]);
+  }, [lancamentos, search, filterAdvogado, filterTipo, filterStatus, filterArea, filterPeriodo, sortField, sortDir]);
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / ITEMS_PER_PAGE));
   const paginated = filtered.slice((page - 1) * ITEMS_PER_PAGE, page * ITEMS_PER_PAGE);
-  const filteredTotal = filtered.reduce((s, l) => s + l.valor, 0);
+  const filteredTotal = filtered.reduce((s, l) => s + (l.valor || 0), 0);
 
-  const toggleSort = (field: SortField) => {
-    if (sortField === field) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
-    else { setSortField(field); setSortDir('asc'); }
-  };
-
-  const SortIcon = ({ field }: { field: SortField }) => {
-    if (sortField !== field) return null;
-    return sortDir === 'asc' ? <ChevronUp className="w-3 h-3 ml-1 inline" /> : <ChevronDown className="w-3 h-3 ml-1 inline" />;
-  };
-
-  const handleMarkPago = useCallback(() => {
+  const handleMarkPago = useCallback(async () => {
     if (!showPagoModal) return;
-    const updated = allLancamentos.map(l => l.id === showPagoModal.id ? { ...l, status: 'pago' as const, data_pagamento: pagoDate, parcelas_pagas: l.parcelas_total } : l);
-    saveLancamentos(updated);
-    setAllLancamentos(updated);
-    setShowPagoModal(null);
-    showToast('Pagamento registrado com sucesso', 'success');
-  }, [showPagoModal, pagoDate, allLancamentos, showToast]);
+    try {
+      await saveLancamento({ 
+        ...showPagoModal, 
+        status: 'pago', 
+        data_pagamento: pagoDate, 
+        parcelas_pagas: showPagoModal.parcelas_total || 1 
+      });
+      setShowPagoModal(null);
+      showToast('Pagamento registrado com sucesso', 'success');
+    } catch (err) {
+      showToast('Erro ao registrar pagamento', 'error');
+    }
+  }, [showPagoModal, pagoDate, saveLancamento, showToast]);
 
-  const handleDelete = useCallback((id: string) => {
-    const updated = allLancamentos.filter(l => l.id !== id);
-    saveLancamentos(updated);
-    setAllLancamentos(updated);
-    setDropdownOpen(null);
-    showToast('Lançamento excluído', 'success');
-  }, [allLancamentos, showToast]);
+  const handleDelete = useCallback(async (id: string) => {
+    try {
+      await deleteLancamento(id);
+      setDropdownOpen(null);
+      showToast('Lançamento excluído', 'success');
+    } catch (err) {
+      showToast('Erro ao excluir lançamento', 'error');
+    }
+  }, [deleteLancamento, showToast]);
 
   const clearFilters = () => { setSearch(''); setFilterAdvogado(''); setFilterTipo(''); setFilterStatus(''); setFilterArea(''); setFilterPeriodo(''); setPage(1); };
 
-  if (!isAdmin()) return <AccessDeniedScreen />;
+  if (!isAdmin) return <AccessDeniedScreen />;
 
   const now = new Date();
   const currentMonthLabel = now.toLocaleDateString('pt-BR', { month: 'short', year: 'numeric' }).replace('.', '');
 
   return (
-    <div>
+    <div className="animate-in fade-in duration-500">
       {/* PAGE HEADER */}
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex items-center justify-between mb-8">
         <div>
-          <h1 className="text-2xl font-bold text-foreground">Financeiro</h1>
+          <h1 className="text-3xl font-extrabold text-foreground tracking-tight">Financeiro</h1>
+          <p className="text-sm text-muted-foreground mt-1">Gestão de honorários, despesas e fluxos financeiros do escritório.</p>
         </div>
         <div className="flex items-center gap-3">
-          <button onClick={() => showToast('Exportação iniciada', 'info')} className="border border-border text-muted-foreground hover:bg-muted/50 rounded-md px-3 py-2 text-sm flex items-center">
-            <Download className="w-4 h-4 mr-1.5" />Exportar
+          <button onClick={() => showToast('Exportação iniciada', 'info')} className="bg-card border border-border text-muted-foreground hover:text-foreground hover:bg-muted/50 rounded-xl px-4 py-2.5 text-sm flex items-center transition-all shadow-sm">
+            <Download className="w-4 h-4 mr-2" />Exportar
           </button>
-          <button onClick={() => setShowModal(true)} className="bg-primary text-primary-foreground text-sm font-medium rounded-md px-4 py-2 hover:bg-primary/90 flex items-center">
-            <Plus className="w-4 h-4 mr-1.5" />+ Novo Lançamento
+          <button onClick={() => setShowModal(true)} className="bg-primary text-primary-foreground text-sm font-bold rounded-xl px-5 py-2.5 hover:bg-primary/90 flex items-center shadow-lg shadow-primary/20 transition-all active:scale-95">
+            <Plus className="w-4 h-4 mr-2" />+ Novo Lançamento
           </button>
         </div>
       </div>
 
       {/* KPI CARDS */}
-      <div className="grid grid-cols-4 gap-4 mb-6">
-        <div className="bg-card border border-border shadow-sm rounded-lg p-5 flex items-center gap-4">
-          <div className="w-11 h-11 rounded-lg flex items-center justify-center bg-amber-50 text-amber-600 flex-shrink-0"><Wallet className="w-5 h-5" /></div>
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+        <div className="bg-card border border-border shadow-sm rounded-2xl p-6 flex items-center gap-5 transition-all hover:shadow-md group">
+          <div className="w-14 h-14 rounded-2xl flex items-center justify-center bg-amber-500/10 text-amber-600 flex-shrink-0 transition-transform group-hover:scale-110"><Wallet className="w-7 h-7" /></div>
           <div>
-            <div className="text-2xl font-bold text-foreground">{formatBRL(metrics.totalAReceber)}</div>
-            <div className="text-xs text-muted-foreground uppercase tracking-wide mt-0.5">Total a Receber</div>
-            <div className="text-xs text-muted-foreground">{metrics.pendenteCount} lançamentos em aberto</div>
+            <div className="text-2xl font-black text-foreground tabular-nums tracking-tighter">{formatBRL(metrics.totalAReceber)}</div>
+            <div className="text-[10px] text-muted-foreground uppercase font-bold tracking-widest mt-0.5">Total a Receber</div>
           </div>
         </div>
-        <div className="bg-card border border-border shadow-sm rounded-lg p-5 flex items-center gap-4">
-          <div className="w-11 h-11 rounded-lg flex items-center justify-center bg-green-50 text-green-600 flex-shrink-0"><TrendingUp className="w-5 h-5" /></div>
+        <div className="bg-card border border-border shadow-sm rounded-2xl p-6 flex items-center gap-5 transition-all hover:shadow-md group">
+          <div className="w-14 h-14 rounded-2xl flex items-center justify-center bg-emerald-500/10 text-emerald-600 flex-shrink-0 transition-transform group-hover:scale-110"><TrendingUp className="w-7 h-7" /></div>
           <div>
-            <div className="text-2xl font-bold text-foreground">{formatBRL(metrics.totalRecebidoMes)}</div>
-            <div className="text-xs text-muted-foreground uppercase tracking-wide mt-0.5">Recebido este Mês</div>
-            <div className="text-xs text-muted-foreground">{metrics.pagoThisMonthCount} pagamentos</div>
+            <div className="text-2xl font-black text-foreground tabular-nums tracking-tighter">{formatBRL(metrics.totalRecebidoMes)}</div>
+            <div className="text-[10px] text-muted-foreground uppercase font-bold tracking-widest mt-0.5">Recebido este Mês</div>
           </div>
         </div>
-        <div className="bg-card border border-border shadow-sm rounded-lg p-5 flex items-center gap-4">
-          <div className={`w-11 h-11 rounded-lg flex items-center justify-center bg-red-50 text-red-600 flex-shrink-0 ${metrics.totalVencido > 0 ? 'ring-2 ring-red-200 ring-offset-1' : ''}`}><AlertTriangle className="w-5 h-5" /></div>
+        <div className="bg-card border border-border shadow-sm rounded-2xl p-6 flex items-center gap-5 transition-all hover:shadow-md group">
+          <div className={`w-14 h-14 rounded-2xl flex items-center justify-center bg-rose-500/10 text-rose-600 flex-shrink-0 transition-transform group-hover:scale-110 ${metrics.totalVencido > 0 ? 'ring-2 ring-rose-200 ring-offset-2' : ''}`}><AlertTriangle className="w-7 h-7" /></div>
           <div>
-            <div className="text-2xl font-bold text-red-600">{formatBRL(metrics.totalVencido)}</div>
-            <div className="text-xs text-muted-foreground uppercase tracking-wide mt-0.5">Em Atraso</div>
-            <div className="text-xs text-muted-foreground">{metrics.vencidoCount} vencidos</div>
+            <div className="text-2xl font-black text-rose-600 tabular-nums tracking-tighter">{formatBRL(metrics.totalVencido)}</div>
+            <div className="text-[10px] text-muted-foreground uppercase font-bold tracking-widest mt-0.5">Em Atraso</div>
           </div>
         </div>
-        <div className="bg-card border border-border shadow-sm rounded-lg p-5 flex items-center gap-4">
-          <div className="w-11 h-11 rounded-lg flex items-center justify-center bg-orange-50 text-orange-600 flex-shrink-0"><Percent className="w-5 h-5" /></div>
+        <div className="bg-card border border-border shadow-sm rounded-2xl p-6 flex items-center gap-5 transition-all hover:shadow-md group">
+          <div className="w-14 h-14 rounded-2xl flex items-center justify-center bg-sky-500/10 text-sky-600 flex-shrink-0 transition-transform group-hover:scale-110"><Percent className="w-7 h-7" /></div>
           <div>
-            <div className={`text-2xl font-bold ${metrics.taxaInadimplencia >= 15 ? 'text-red-600' : metrics.taxaInadimplencia >= 8 ? 'text-amber-600' : 'text-green-600'}`}>{metrics.taxaInadimplencia.toFixed(1)}%</div>
-            <div className="text-xs text-muted-foreground uppercase tracking-wide mt-0.5">Inadimplência</div>
-            <div className="h-1.5 rounded-full bg-muted w-full mt-1"><div className="h-full rounded-full bg-red-400" style={{ width: `${Math.min(metrics.taxaInadimplencia, 100)}%` }} /></div>
+            <div className={`text-2xl font-black tabular-nums tracking-tighter ${metrics.taxaInadimplencia >= 15 ? 'text-rose-600' : metrics.taxaInadimplencia >= 8 ? 'text-amber-600' : 'text-emerald-600'}`}>{metrics.taxaInadimplencia.toFixed(1)}%</div>
+            <div className="text-[10px] text-muted-foreground uppercase font-bold tracking-widest mt-0.5">Taxa de Inadimplência</div>
           </div>
         </div>
       </div>
 
       {/* FILTER BAR */}
-      <div className="bg-card border border-border rounded-lg p-3 mb-4 flex items-center gap-3 flex-wrap">
-        <div className="flex-1 min-w-[12rem] relative">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-          <input value={search} onChange={e => { setSearch(e.target.value); setPage(1); }} placeholder="Buscar por cliente ou processo..." className="w-full pl-9 pr-3 py-2 border border-border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-ring" />
+      <div className="bg-card border border-border rounded-2xl p-4 mb-8 flex items-center gap-4 flex-wrap shadow-sm">
+        <div className="flex-1 min-w-[20rem] relative">
+          <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+          <input value={search} onChange={e => { setSearch(e.target.value); setPage(1); }} placeholder="Buscar por cliente, processo ou descrição..." className="w-full pl-11 pr-4 py-2.5 bg-muted/30 border-none rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all placeholder:text-muted-foreground/50" />
         </div>
-        <select value={filterAdvogado} onChange={e => { setFilterAdvogado(e.target.value); setPage(1); }} className="bg-card border border-border rounded-md px-3 py-2 text-sm text-muted-foreground">
-          <option value="">Todos Advogados</option>
-          {MOCK_USERS.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
-        </select>
-        <select value={filterTipo} onChange={e => { setFilterTipo(e.target.value); setPage(1); }} className="bg-card border border-border rounded-md px-3 py-2 text-sm text-muted-foreground">
-          <option value="">Todos Tipos</option>
-          <option value="honorario">Honorário</option>
-          <option value="despesa">Despesa</option>
-          <option value="repasse">Repasse</option>
-          <option value="custas">Custas</option>
-        </select>
-        <select value={filterStatus} onChange={e => { setFilterStatus(e.target.value); setPage(1); }} className="bg-card border border-border rounded-md px-3 py-2 text-sm text-muted-foreground">
-          <option value="">Todos Status</option>
-          <option value="pendente">Pendente</option>
-          <option value="pago">Pago</option>
-          <option value="vencido">Vencido</option>
-          <option value="parcelado">Parcelado</option>
-        </select>
-        <select value={filterArea} onChange={e => { setFilterArea(e.target.value); setPage(1); }} className="bg-card border border-border rounded-md px-3 py-2 text-sm text-muted-foreground">
-          <option value="">Todas Áreas</option>
-          <option value="trabalhista">Trabalhista</option>
-          <option value="civil">Civil</option>
-          <option value="criminal">Criminal</option>
-          <option value="previdenciario">Previdenciário</option>
-        </select>
-        <select value={filterPeriodo} onChange={e => { setFilterPeriodo(e.target.value); setPage(1); }} className="bg-card border border-border rounded-md px-3 py-2 text-sm text-muted-foreground">
-          <option value="">Todos Períodos</option>
-          <option value="este_mes">Este mês</option>
-          <option value="mes_anterior">Mês anterior</option>
-          <option value="trimestre">Este trimestre</option>
-          <option value="ano">Este ano</option>
-        </select>
-        {hasActiveFilters && (
-          <button onClick={clearFilters} className="text-xs text-muted-foreground hover:text-foreground ml-auto flex items-center gap-1"><X className="w-3 h-3" />Limpar</button>
-        )}
+        <div className="flex gap-4 flex-wrap items-center">
+          <select value={filterAdvogado} onChange={e => { setFilterAdvogado(e.target.value); setPage(1); }} className="bg-muted/30 border-none rounded-xl px-4 py-2.5 text-sm font-medium text-foreground focus:ring-2 focus:ring-primary/20 outline-none transition-all cursor-pointer">
+            <option value="">Todos Advogados</option>
+            {membros.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+          </select>
+          <select value={filterTipo} onChange={e => { setFilterTipo(e.target.value); setPage(1); }} className="bg-muted/30 border-none rounded-xl px-4 py-2.5 text-sm font-medium text-foreground focus:ring-2 focus:ring-primary/20 outline-none transition-all cursor-pointer">
+            <option value="">Todos Tipos</option>
+            {Object.entries(lancamentoTipoLabels).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+          </select>
+          <select value={filterStatus} onChange={e => { setFilterStatus(e.target.value); setPage(1); }} className="bg-muted/30 border-none rounded-xl px-4 py-2.5 text-sm font-medium text-foreground focus:ring-2 focus:ring-primary/20 outline-none transition-all cursor-pointer">
+            <option value="">Todos Status</option>
+            {Object.entries(lancamentoStatusLabels).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+          </select>
+          <select value={filterArea} onChange={e => { setFilterArea(e.target.value); setPage(1); }} className="bg-muted/30 border-none rounded-xl px-4 py-2.5 text-sm font-medium text-foreground focus:ring-2 focus:ring-primary/20 outline-none transition-all cursor-pointer">
+            <option value="">Todas áreas</option>
+            {Object.entries(areaLabels).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+          </select>
+          {hasActiveFilters && (
+            <button onClick={clearFilters} className="text-xs font-bold text-muted-foreground hover:text-foreground ml-auto flex items-center gap-1.5 transition-colors px-3 py-1.5 hover:bg-muted rounded-lg uppercase tracking-wider"><X className="w-3.5 h-3.5" />Limpar Filtros</button>
+          )}
+        </div>
       </div>
 
       {/* MAIN GRID */}
-      <div className="grid grid-cols-12 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 pb-12">
         {/* TABLE */}
-        <div className="col-span-8">
-          {filtered.length === 0 ? (
-            <div className="bg-card border border-border rounded-lg shadow-sm">
-              <EmptyState icon={DollarSign} title="Nenhum lançamento encontrado" subtitle="Tente ajustar os filtros ou registre um novo lançamento" ctaLabel="+ Novo Lançamento" onCta={() => setShowModal(true)} />
+        <div className="lg:col-span-8">
+          {loadingLancamentos ? (
+            <div className="bg-card border border-border rounded-2xl shadow-sm p-24 flex flex-col items-center justify-center">
+              <Loader2 className="w-12 h-12 text-primary animate-spin mb-6" />
+              <p className="text-sm text-muted-foreground font-semibold uppercase tracking-widest">Sincronizando dados...</p>
+            </div>
+          ) : filtered.length === 0 ? (
+            <div className="bg-card border border-border rounded-2xl shadow-sm overflow-hidden">
+              <EmptyState icon={DollarSign} title="Sem registros financeiros" subtitle="Não localizamos lançamentos para os filtros selecionados." ctaLabel="+ Novo Lançamento" onCta={() => setShowModal(true)} />
             </div>
           ) : (
-            <div className="bg-card border border-border rounded-lg shadow-sm overflow-hidden">
-              <div className="overflow-x-auto">
-                <table className="w-full">
+            <div className="bg-card border border-border rounded-2xl shadow-sm overflow-hidden flex flex-col h-full transition-all">
+              <div className="overflow-x-auto flex-1">
+                <table className="w-full border-collapse">
                   <thead>
-                    <tr className="bg-muted border-b border-border">
+                    <tr className="bg-muted/40 border-b border-border">
                       {([
                         ['cliente_nome', 'CLIENTE'],
-                        ['numero_cnj', 'PROCESSO'],
-                        ['responsible_id', 'ADVOGADO'],
                         ['tipo', 'TIPO'],
-                        ['descricao', 'DESCRIÇÃO'],
                         ['vencimento', 'VENCIMENTO'],
                         ['valor', 'VALOR'],
                         ['status', 'STATUS'],
                       ] as [SortField, string][]).map(([f, label]) => (
-                        <th key={f} onClick={() => toggleSort(f)} className="text-xs font-semibold text-muted-foreground uppercase tracking-wider px-4 py-3 text-left cursor-pointer hover:text-foreground/80 select-none">
-                          {label}<SortIcon field={f} />
+                        <th key={f} onClick={() => toggleSort(f)} className="text-[10px] font-black text-muted-foreground uppercase tracking-[0.2em] px-6 py-5 text-left cursor-pointer hover:text-primary transition-colors select-none">
+                          <div className="flex items-center gap-1.5">{label} <SortIcon field={f} /></div>
                         </th>
                       ))}
-                      <th className="text-xs font-semibold text-muted-foreground uppercase tracking-wider px-4 py-3 text-left">AÇÕES</th>
+                      <th className="text-[10px] font-black text-muted-foreground uppercase tracking-[0.2em] px-6 py-5 text-right">AÇÕES</th>
                     </tr>
                   </thead>
-                  <tbody>
+                  <tbody className="divide-y divide-border/50">
                     {paginated.map(l => {
-                      const user = MOCK_USERS.find(u => u.id === l.responsible_id);
                       const dd = l.vencimento ? diffDays(l.vencimento) : null;
+                      const isVencido = l.status !== 'pago' && dd !== null && dd < 0;
+                      
                       return (
-                        <tr key={l.id} className="hover:bg-muted transition-colors border-b border-border/50 last:border-0">
-                          <td className="px-4 py-3.5">
-                            <div className="flex items-center gap-2">
-                              <div className="w-7 h-7 rounded-full bg-secondary text-secondary-foreground flex items-center justify-center text-xs font-medium flex-shrink-0">{getInitials(l.cliente_nome)}</div>
-                              <div>
-                                <div className="text-sm font-medium text-foreground">{l.cliente_nome}</div>
-                                <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${areaColors[l.practice_area] || ''}`}>{areaLabels[l.practice_area]}</span>
+                        <tr key={l.id} className="group hover:bg-muted/30 transition-all border-b border-border/50 last:border-0 relative">
+                          <td className="px-6 py-5">
+                            <div className="flex items-center gap-4">
+                              <div className="w-10 h-10 rounded-xl bg-primary/10 text-primary flex items-center justify-center text-sm font-black leading-none flex-shrink-0 uppercase transition-transform group-hover:scale-110 shadow-sm border border-primary/5">
+                                {getInitials(l.cliente_nome)}
+                              </div>
+                              <div className="min-w-0">
+                                <div className="text-sm font-bold text-foreground truncate max-w-[180px]" title={l.cliente_nome}>{l.cliente_nome}</div>
+                                <div className="text-[10px] text-muted-foreground truncate uppercase font-bold tracking-tight mt-0.5 opacity-70">{l.descricao}</div>
                               </div>
                             </div>
                           </td>
-                          <td className="px-4 py-3.5 min-w-[9rem]">
-                            <span className="font-mono text-xs text-muted-foreground" title={l.numero_cnj}>{l.numero_cnj.length > 20 ? l.numero_cnj.slice(0, 20) + '...' : l.numero_cnj}</span>
+                          <td className="px-6 py-5">
+                            <span className={`text-[9px] font-black px-2.5 py-1 rounded-lg uppercase tracking-widest border ${lancamentoTipoColors[l.tipo]}`}>{lancamentoTipoLabels[l.tipo]}</span>
                           </td>
-                          <td className="px-4 py-3.5">
-                            {user && (
-                              <div className="flex items-center gap-1.5">
-                                <UserAvatar name={user.name} color={user.avatar_color} size="sm" />
-                                <span className="text-sm text-secondary-foreground">{user.name}</span>
+                          <td className="px-6 py-5">
+                            {l.status === 'pago' ? (
+                              <div className="flex flex-col">
+                                <span className="text-[9px] uppercase font-black text-emerald-600/60 leading-tight">Recebido</span>
+                                <span className="text-xs font-bold text-emerald-600 tabular-nums">{formatDate(l.data_pagamento || '')}</span>
+                              </div>
+                            ) : isVencido ? (
+                              <div className="flex flex-col">
+                                <span className="text-[9px] uppercase font-black text-rose-600/70 leading-tight animate-pulse">Atrasado</span>
+                                <span className="text-xs font-black text-rose-600 tabular-nums">{formatDate(l.vencimento || '')}</span>
+                              </div>
+                            ) : dd !== null && dd <= 7 ? (
+                              <div className="flex flex-col">
+                                <span className="text-[9px] uppercase font-black text-amber-600/70 leading-tight">Vence em {dd}d</span>
+                                <span className="text-xs font-bold text-amber-600 tabular-nums">{formatDate(l.vencimento || '')}</span>
+                              </div>
+                            ) : (
+                              <div className="flex flex-col">
+                                <span className="text-[9px] uppercase font-black text-muted-foreground/60 leading-tight">Data Venc.</span>
+                                <span className="text-xs font-bold text-foreground/80 tabular-nums">{formatDate(l.vencimento || '')}</span>
                               </div>
                             )}
                           </td>
-                          <td className="px-4 py-3.5">
-                            <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${lancamentoTipoColors[l.tipo]}`}>{lancamentoTipoLabels[l.tipo]}</span>
+                          <td className="px-6 py-5">
+                            <div className="text-sm font-black text-foreground tabular-nums tracking-tighter">{formatBRL(l.valor)}</div>
+                            {l.status === 'parcelado' && <div className="text-[9px] text-primary font-black uppercase tracking-widest mt-0.5">{l.parcelas_pagas}/{l.parcelas_total} PARC.</div>}
                           </td>
-                          <td className="px-4 py-3.5"><span className="text-sm text-secondary-foreground truncate max-w-[10rem] block">{l.descricao}</span></td>
-                          <td className="px-4 py-3.5">
-                            {l.status === 'pago' ? (
-                              <div><div className="text-xs text-muted-foreground">Pago em</div><div className="text-sm text-green-600">{formatDate(l.data_pagamento)}</div></div>
-                            ) : dd !== null && dd < 0 ? (
-                              <div><div className="text-xs text-red-400">Vencido</div><div className="text-sm text-red-600 font-medium">{formatDate(l.vencimento)}</div></div>
-                            ) : dd !== null && dd <= 7 ? (
-                              <div><div className="text-xs text-amber-400">Vence em {dd} dias</div><div className="text-sm text-amber-600 font-medium">{formatDate(l.vencimento)}</div></div>
-                            ) : (
-                              <div><div className="text-xs text-muted-foreground">Vencimento</div><div className="text-sm text-foreground/80">{formatDate(l.vencimento)}</div></div>
-                            )}
+                          <td className="px-6 py-5">
+                            <span className={`text-[9px] font-black px-3 py-1.5 rounded-full uppercase tracking-[0.1em] border shadow-sm ${lancamentoStatusColors[l.status]}`}>{lancamentoStatusLabels[l.status]}</span>
                           </td>
-                          <td className="px-4 py-3.5">
-                            <div className="text-sm font-semibold text-foreground">{formatBRL(l.valor)}</div>
-                            {l.status === 'parcelado' && <div className="text-xs text-primary/80">{l.parcelas_pagas}/{l.parcelas_total} parcelas</div>}
-                          </td>
-                          <td className="px-4 py-3.5">
-                            <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${lancamentoStatusColors[l.status]}`}>{lancamentoStatusLabels[l.status]}</span>
-                          </td>
-                          <td className="px-4 py-3.5 relative">
-                            <button onClick={() => setDropdownOpen(dropdownOpen === l.id ? null : l.id)} className="text-muted-foreground hover:text-secondary-foreground p-1 rounded"><MoreHorizontal className="w-4 h-4" /></button>
+                          <td className="px-6 py-5 text-right relative">
+                            <button onClick={() => setDropdownOpen(dropdownOpen === l.id ? null : l.id)} className="text-muted-foreground hover:text-foreground p-2 rounded-xl hover:bg-muted transition-all active:scale-90 shadow-sm border border-transparent hover:border-border"><MoreHorizontal className="w-5 h-5" /></button>
                             {dropdownOpen === l.id && (
                               <>
                                 <div className="fixed inset-0 z-10" onClick={() => setDropdownOpen(null)} />
-                                <div className="absolute right-0 top-full mt-1 bg-card border border-border shadow-lg rounded-lg py-1 z-20 w-48">
+                                <div className="absolute right-6 top-14 bg-card border border-border shadow-2xl rounded-2xl py-2 z-20 w-56 overflow-hidden animate-in slide-in-from-top-2 duration-300">
                                   {l.status !== 'pago' && (
-                                    <button onClick={() => { setDropdownOpen(null); setPagoDate(new Date().toISOString().slice(0, 10)); setShowPagoModal(l); }} className="w-full text-left px-3 py-2 text-sm text-green-600 hover:bg-green-50 flex items-center gap-2"><CheckCircle className="w-4 h-4" />Marcar como Pago</button>
+                                    <button onClick={() => { setDropdownOpen(null); setPagoDate(new Date().toISOString().slice(0, 10)); setShowPagoModal(l); }} className="w-full text-left px-5 py-3 text-[13px] font-bold text-emerald-600 hover:bg-emerald-50/50 flex items-center gap-3 transition-colors"><CheckCircle className="w-4 h-4" />Marcar como Pago</button>
                                   )}
-                                  <button onClick={() => { setDropdownOpen(null); showToast('Edição em desenvolvimento', 'info'); }} className="w-full text-left px-3 py-2 text-sm text-secondary-foreground hover:bg-muted flex items-center gap-2"><Edit className="w-4 h-4" />Editar</button>
-                                  <div className="border-t border-border/50 my-1" />
-                                  <button onClick={() => handleDelete(l.id)} className="w-full text-left px-3 py-2 text-sm text-red-600 hover:bg-red-50 flex items-center gap-2"><Trash2 className="w-4 h-4" />Excluir</button>
+                                  <button onClick={() => { setDropdownOpen(null); showToast('Em desenvolvimento', 'info'); }} className="w-full text-left px-5 py-3 text-[13px] font-bold text-foreground/80 hover:bg-muted/50 flex items-center gap-3 transition-colors"><Edit className="w-4 h-4" />Editar Lançamento</button>
+                                  <div className="h-px bg-border/50 mx-2 my-2" />
+                                  <button onClick={() => handleDelete(l.id)} className="w-full text-left px-5 py-3 text-[13px] font-bold text-rose-600 hover:bg-rose-50/50 flex items-center gap-3 transition-colors"><Trash2 className="w-4 h-4" />Excluir Registro</button>
                                 </div>
                               </>
                             )}
@@ -367,64 +387,81 @@ export default function FinanceiroPage() {
                 </table>
               </div>
               {/* TABLE FOOTER */}
-              <div className="border-t border-border px-4 py-3 flex items-center justify-between">
-                <span className="text-sm text-muted-foreground">Mostrando {(page - 1) * ITEMS_PER_PAGE + 1}–{Math.min(page * ITEMS_PER_PAGE, filtered.length)} de {filtered.length} lançamentos</span>
-                <div className="flex items-center gap-4 text-xs text-muted-foreground">
-                  Total filtrado: <span className="text-sm font-semibold text-foreground">{formatBRL(filteredTotal)}</span>
+              <div className="border-t border-border px-8 py-5 flex items-center justify-between bg-muted/5">
+                <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest leading-none">Página {page} de {totalPages} • Total {filtered.length}</span>
+                <div className="flex items-center gap-3 text-sm font-bold text-foreground">
+                  Valor Total Filtrado: <span className="tabular-nums tracking-tighter text-lg font-black">{formatBRL(filteredTotal)}</span>
                 </div>
                 <div className="flex items-center gap-2">
-                  <button disabled={page <= 1} onClick={() => setPage(p => p - 1)} className="bg-card border border-border rounded-md px-3 py-1.5 text-sm text-secondary-foreground hover:bg-muted disabled:opacity-40"><ChevronLeft className="w-4 h-4" /></button>
-                  <button disabled={page >= totalPages} onClick={() => setPage(p => p + 1)} className="bg-card border border-border rounded-md px-3 py-1.5 text-sm text-secondary-foreground hover:bg-muted disabled:opacity-40"><ChevronRight className="w-4 h-4" /></button>
+                  <button disabled={page <= 1} onClick={() => setPage(p => p - 1)} className="bg-card border border-border rounded-xl p-2.5 text-foreground hover:bg-muted disabled:opacity-20 disabled:cursor-not-allowed transition-all active:scale-95 shadow-sm"><ChevronLeft className="w-5 h-5" /></button>
+                  <button disabled={page >= totalPages} onClick={() => setPage(p => p + 1)} className="bg-card border border-border rounded-xl p-2.5 text-foreground hover:bg-muted disabled:opacity-20 disabled:cursor-not-allowed transition-all active:scale-95 shadow-sm"><ChevronRight className="w-5 h-5" /></button>
                 </div>
               </div>
             </div>
           )}
         </div>
 
-        {/* RESUMO POR ADVOGADO */}
-        <div className="col-span-4">
-          <div className="bg-card border border-border rounded-lg shadow-sm h-fit">
-            <div className="px-5 py-4 border-b border-border flex items-center justify-between">
-              <span className="text-sm font-semibold text-foreground">Resumo por Advogado</span>
-              <span className="text-xs text-muted-foreground capitalize">{currentMonthLabel}</span>
+        {/* SIDE BAR: RESUMO POR ADVOGADO */}
+        <div className="lg:col-span-4 flex flex-col gap-6">
+          <div className="bg-card border border-border rounded-2xl shadow-sm overflow-hidden transition-all hover:shadow-md">
+            <div className="px-6 py-6 border-b border-border bg-muted/5 flex items-center justify-between">
+              <div>
+                <h3 className="text-xs font-black text-foreground uppercase tracking-[0.2em] leading-none mb-1">Performance Financeira</h3>
+                <p className="text-[10px] text-muted-foreground font-bold uppercase tracking-widest">{currentMonthLabel}</p>
+              </div>
+              <div className="h-9 w-9 rounded-xl bg-primary/10 flex items-center justify-center border border-primary/10 shadow-sm"><Info className="w-4 h-4 text-primary" /></div>
             </div>
-            <div className="px-5 py-2">
-              {resumoPorAdvogado.map(adv => {
-                const tcColor = adv.taxaCobranca >= 80 ? 'text-green-600' : adv.taxaCobranca >= 50 ? 'text-amber-600' : 'text-red-600';
-                const barColor = adv.taxaCobranca >= 80 ? 'bg-green-500' : adv.taxaCobranca >= 50 ? 'bg-amber-400' : 'bg-red-400';
+            <div className="px-6 py-2 max-h-[700px] overflow-y-auto divide-y divide-border/50 custom-scrollbar">
+              {resumoPorAdvogado.length === 0 ? (
+                <div className="py-16 text-center">
+                  <p className="text-xs text-muted-foreground font-bold uppercase tracking-widest">Sem movimentações este mês</p>
+                </div>
+              ) : resumoPorAdvogado.map(adv => {
+                const tcColor = adv.taxaCobranca >= 80 ? 'text-emerald-600' : adv.taxaCobranca >= 50 ? 'text-amber-600' : 'text-rose-600';
+                const barColor = adv.taxaCobranca >= 80 ? 'bg-emerald-500' : adv.taxaCobranca >= 50 ? 'bg-amber-400' : 'bg-rose-500';
                 return (
-                  <div key={adv.uid} className="py-4 border-b border-border/50 last:border-0">
-                    <div className="flex items-center gap-2.5 mb-2.5">
-                      <UserAvatar name={adv.name} color={adv.avatar_color} size="md" />
-                      <div>
-                        <div className="text-sm font-medium text-foreground">{adv.name}</div>
-                        <div className="flex gap-1 flex-wrap">{adv.practice_areas.map(a => <span key={a} className={`text-xs px-1.5 py-0.5 rounded-full ${areaColors[a]}`}>{areaLabels[a]}</span>)}</div>
+                  <div key={adv.uid} className="py-6 group transition-all">
+                    <div className="flex items-center gap-4 mb-5">
+                      <div className="w-12 h-12 rounded-2xl bg-primary/10 text-primary flex items-center justify-center text-sm font-black border border-primary/5 shadow-sm transition-transform group-hover:scale-105">
+                        {getInitials(adv.name)}
+                      </div>
+                      <div className="min-w-0">
+                        <div className="text-sm font-black text-foreground group-hover:text-primary transition-colors truncate">{adv.name}</div>
+                        <div className="text-[9px] text-muted-foreground font-black uppercase tracking-widest mt-0.5 opacity-80 leading-none">Eficiência de Cobrança</div>
                       </div>
                     </div>
-                    <div className="grid grid-cols-2 gap-2 mb-2.5">
-                      <div className="bg-amber-50 rounded-md p-2.5">
-                        <div className="text-xs text-amber-600 uppercase">A Receber</div>
-                        <div className="text-sm font-bold text-amber-700 mt-0.5">{formatBRL(adv.aReceber)}</div>
+                    <div className="grid grid-cols-2 gap-4 mb-6">
+                      <div className="bg-amber-500/5 border border-amber-200/40 rounded-xl p-4 transition-all group-hover:bg-amber-500/10">
+                        <div className="text-[9px] text-amber-600 uppercase font-black tracking-widest mb-1 leading-none">A Receber</div>
+                        <div className="text-[15px] font-black text-amber-700 tabular-nums tracking-tighter">{formatBRL(adv.aReceber)}</div>
                       </div>
-                      <div className="bg-green-50 rounded-md p-2.5">
-                        <div className="text-xs text-green-600 uppercase">Recebido</div>
-                        <div className="text-sm font-bold text-green-700 mt-0.5">{formatBRL(adv.recebido)}</div>
+                      <div className="bg-emerald-500/5 border border-emerald-200/40 rounded-xl p-4 transition-all group-hover:bg-emerald-500/10">
+                        <div className="text-[9px] text-emerald-600 uppercase font-black tracking-widest mb-1 leading-none">Recebido</div>
+                        <div className="text-[15px] font-black text-emerald-700 tabular-nums tracking-tighter">{formatBRL(adv.recebido)}</div>
                       </div>
                     </div>
-                    <div className="flex items-center justify-between mb-1">
-                      <span className="text-xs text-muted-foreground">Taxa de cobrança</span>
-                      <span className={`text-xs font-semibold ${tcColor}`}>{adv.taxaCobranca.toFixed(1)}%</span>
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-[10px] font-black text-muted-foreground uppercase tracking-widest opacity-60">Percentual de Êxito</span>
+                      <span className={`text-xs font-black ${tcColor} tabular-nums`}>{adv.taxaCobranca.toFixed(1)}%</span>
                     </div>
-                    <div className="h-1.5 rounded-full bg-muted/80 w-full"><div className={`h-full rounded-full ${barColor}`} style={{ width: `${Math.min(adv.taxaCobranca, 100)}%` }} /></div>
+                    <div className="h-2.5 rounded-full bg-muted/60 w-full overflow-hidden shadow-inner flex border border-black/5">
+                      <div className={`h-full rounded-full ${barColor} transition-all duration-1000 ease-out shadow-sm`} style={{ width: `${Math.min(adv.taxaCobranca, 100)}%` }} />
+                    </div>
                   </div>
                 );
               })}
             </div>
-            <div className="border-t border-border/50 px-5 py-3 bg-muted rounded-b-lg">
-              <div className="text-xs font-semibold text-muted-foreground uppercase mb-2">Total do Escritório</div>
-              <div className="grid grid-cols-2 gap-2">
-                <div><div className="text-xs text-muted-foreground">A Receber</div><div className="text-base font-bold text-amber-600">{formatBRL(metrics.totalAReceber)}</div></div>
-                <div><div className="text-xs text-muted-foreground">Recebido (mês)</div><div className="text-base font-bold text-green-600">{formatBRL(metrics.totalRecebidoMes)}</div></div>
+            <div className="bg-muted px-6 py-5 border-t border-border">
+              <div className="text-[10px] font-black text-muted-foreground uppercase tracking-[0.2em] mb-4 opacity-70">Saldos Consolidados Escritório</div>
+              <div className="grid grid-cols-2 gap-6">
+                <div>
+                  <div className="text-[9px] font-black text-amber-600 uppercase tracking-widest mb-1">Pendente Geral</div>
+                  <div className="text-xl font-black text-amber-600 tabular-nums tracking-tighter">{formatBRL(metrics.totalAReceber)}</div>
+                </div>
+                <div>
+                  <div className="text-[9px] font-black text-emerald-600 uppercase tracking-widest mb-1">Liquidado Geral</div>
+                  <div className="text-xl font-black text-emerald-600 tabular-nums tracking-tighter">{formatBRL(metrics.totalRecebidoMes)}</div>
+                </div>
               </div>
             </div>
           </div>
@@ -433,32 +470,58 @@ export default function FinanceiroPage() {
 
       {/* MARCAR COMO PAGO MODAL */}
       {showPagoModal && (
-        <div className="fixed inset-0 bg-black/20 backdrop-blur-sm z-50 flex items-center justify-center" onClick={() => setShowPagoModal(null)}>
-          <div className="bg-card rounded-xl shadow-xl p-6 max-w-sm mx-4 text-center" onClick={e => e.stopPropagation()}>
-            <CheckCircle className="w-10 h-10 text-green-500 mx-auto mb-3" />
-            <div className="text-lg font-semibold text-foreground">Confirmar Pagamento</div>
-            <div className="text-sm text-muted-foreground mt-1">{showPagoModal.descricao}</div>
-            <div className="text-sm font-semibold text-foreground mt-0.5">Valor: {formatBRL(showPagoModal.valor)}</div>
-            <div className="mt-4 mb-5 text-left">
-              <label className="text-sm font-medium text-foreground/80 mb-1 block">Data do pagamento*</label>
-              <input type="date" value={pagoDate} onChange={e => setPagoDate(e.target.value)} className="w-full border border-border rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring" />
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-md z-[100] flex items-center justify-center p-4 animate-in fade-in duration-300" onClick={() => setShowPagoModal(null)}>
+          <div className="bg-card rounded-[2.5rem] shadow-2xl p-10 max-w-md w-full text-center scale-in-center animate-in zoom-in-95 duration-300 relative border border-border" onClick={e => e.stopPropagation()}>
+            <div className="w-20 h-20 bg-emerald-500/10 text-emerald-600 rounded-[2rem] flex items-center justify-center mx-auto mb-6 border border-emerald-500/20 shadow-inner">
+              <CheckCircle className="w-10 h-10" />
             </div>
-            <div className="flex gap-3">
-              <button onClick={() => setShowPagoModal(null)} className="flex-1 border border-border rounded-md py-2 text-sm text-secondary-foreground hover:bg-muted">Cancelar</button>
-              <button onClick={handleMarkPago} className="flex-1 bg-green-600 text-white rounded-md py-2 text-sm font-medium hover:bg-green-700">Confirmar Pagamento</button>
+            <h3 className="text-2xl font-black text-foreground tracking-tighter line-clamp-1">Confirmar Recebimento</h3>
+            <p className="text-sm text-muted-foreground mt-2 font-medium px-4 line-clamp-2 leading-relaxed">{showPagoModal.descricao}</p>
+            
+            <div className="mt-8 p-6 bg-muted/50 rounded-[2rem] border border-border shadow-inner group">
+              <div className="text-3xl font-black text-emerald-600 tabular-nums tracking-tighter group-hover:scale-105 transition-transform">{formatBRL(showPagoModal.valor)}</div>
+              <p className="text-[10px] uppercase font-black text-muted-foreground mt-2 tracking-[0.2em] opacity-60">Valor da Liquidação</p>
+            </div>
+
+            <div className="mt-8 mb-10 text-left">
+              <label className="text-[10px] font-black text-muted-foreground uppercase tracking-[0.2em] mb-3 block px-1">Selecione a Data Efetiva</label>
+              <input type="date" value={pagoDate} onChange={e => setPagoDate(e.target.value)} className="w-full bg-muted/50 border-2 border-border/50 rounded-2xl px-5 py-4 text-sm font-bold focus:outline-none focus:ring-4 focus:ring-emerald-500/10 focus:border-emerald-500 transition-all cursor-pointer shadow-sm" />
+            </div>
+
+            <div className="flex gap-4">
+              <button onClick={() => setShowPagoModal(null)} className="flex-1 text-sm font-black text-muted-foreground hover:bg-muted py-4 rounded-2xl transition-all active:scale-95 uppercase tracking-widest border border-transparent hover:border-border">Voltar</button>
+              <button onClick={handleMarkPago} className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-black py-4 rounded-2xl shadow-xl shadow-emerald-500/30 transition-all active:scale-95 uppercase tracking-widest">Efetivar Baixa</button>
             </div>
           </div>
         </div>
       )}
 
       {/* NOVO LANÇAMENTO MODAL */}
-      {showModal && <NovoLancamentoModal onClose={() => setShowModal(false)} onSave={(l) => { const updated = [...allLancamentos, l]; saveLancamentos(updated); setAllLancamentos(updated); setShowModal(false); showToast('Lançamento registrado com sucesso', 'success'); }} />}
+      {showModal && (
+        <NovoLancamentoModal 
+          onClose={() => setShowModal(false)} 
+          onSave={async (l) => {
+            try {
+              await saveLancamento(l);
+              setShowModal(false);
+              showToast('Lançamento registrado com sucesso', 'success');
+            } catch (err) {
+              showToast('Erro ao salvar lançamento', 'error');
+            }
+          }} 
+        />
+      )}
     </div>
   );
+
 }
 
 /* ─── NOVO LANÇAMENTO MODAL ─── */
-function NovoLancamentoModal({ onClose, onSave }: { onClose: () => void; onSave: (l: Lancamento) => void }) {
+function NovoLancamentoModal({ onClose, onSave }: { onClose: () => void; onSave: (l: Lancamento) => Promise<void> | void }) {
+  const { clientes, loading: loadingClientes } = useClientes();
+  const { processos, loading: loadingProcessos } = useProcessos();
+  const { membros, loading: loadingEquipe } = useEquipe();
+  
   const [clienteSearch, setClienteSearch] = useState('');
   const [selectedCliente, setSelectedCliente] = useState<any>(null);
   const [showClienteList, setShowClienteList] = useState(false);
@@ -474,38 +537,36 @@ function NovoLancamentoModal({ onClose, onSave }: { onClose: () => void; onSave:
   const [parcelasTotal, setParcelasTotal] = useState(2);
   const [parcelasPagas, setParcelasPagas] = useState(0);
   const [errors, setErrors] = useState<Record<string, boolean>>({});
-
-  const allClientes = useMemo(() => loadClientes(), []);
-  const allProcessos = useMemo(() => getProcessos(), []);
+  const [isSaving, setIsSaving] = useState(false);
 
   const filteredClientes = useMemo(() => {
-    if (!clienteSearch) return allClientes;
+    if (!clienteSearch) return [];
     const s = clienteSearch.toLowerCase();
-    return allClientes.filter(c => {
-      const name = (c as any).nome || (c as any).razao_social || '';
+    return clientes.filter(c => {
+      const name = c.nome || c.razao_social || '';
       return name.toLowerCase().includes(s);
     });
-  }, [allClientes, clienteSearch]);
+  }, [clientes, clienteSearch]);
 
   const relatedProcessos = useMemo(() => {
     if (!selectedCliente) return [];
-    return allProcessos.filter(p => p.polo_ativo_id === selectedCliente.id);
-  }, [selectedCliente, allProcessos]);
+    return processos.filter(p => p.polo_ativo_id === selectedCliente.id);
+  }, [selectedCliente, processos]);
 
   const handleSelectCliente = (c: any) => {
     setSelectedCliente(c);
-    setClienteSearch('');
+    setClienteSearch(c.nome || c.razao_social || '');
     setShowClienteList(false);
     setProcessoId('');
-    setArea(c.practice_area || '');
+    if (c.practice_area) setArea(c.practice_area);
   };
 
   const handleSelectProcesso = (pid: string) => {
     setProcessoId(pid);
-    const proc = allProcessos.find(p => p.id === pid);
+    const proc = processos.find(p => p.id === pid);
     if (proc) {
-      setResponsibleId(proc.responsible_id);
-      setArea(proc.practice_area);
+      if (proc.responsible_id) setResponsibleId(proc.responsible_id);
+      if (proc.practice_area) setArea(proc.practice_area);
     }
   };
 
@@ -526,7 +587,7 @@ function NovoLancamentoModal({ onClose, onSave }: { onClose: () => void; onSave:
     if (num > 0) setValor(num.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     const errs: Record<string, boolean> = {};
     if (!selectedCliente) errs.cliente = true;
     if (!responsibleId) errs.responsible = true;
@@ -535,174 +596,215 @@ function NovoLancamentoModal({ onClose, onSave }: { onClose: () => void; onSave:
     if (!parseValor(valor)) errs.valor = true;
     if (!vencimento) errs.vencimento = true;
     if (status === 'pago' && !dataPagamento) errs.dataPagamento = true;
+    
     setErrors(errs);
     if (Object.keys(errs).length) return;
 
-    const proc = allProcessos.find(p => p.id === processoId);
-    const clienteName = (selectedCliente as any).nome || (selectedCliente as any).razao_social || '';
+    setIsSaving(true);
+    try {
+      const lancamento: Partial<Lancamento> = {
+        processo_id: processoId || undefined,
+        cliente_id: selectedCliente.id,
+        responsible_id: responsibleId,
+        practice_area: (area || 'civil') as any,
+        tipo: tipo as LancamentoTipo,
+        descricao: descricao.trim(),
+        valor: parseValor(valor),
+        data: vencimento, // Vencimento é a data base
+        vencimento,
+        status,
+        data_pagamento: status === 'pago' ? dataPagamento : undefined,
+        parcelas_total: status === 'parcelado' ? parcelasTotal : 1,
+        parcelas_pagas: status === 'parcelado' ? parcelasPagas : status === 'pago' ? 1 : 0,
+      };
 
-    const lancamento: Lancamento = {
-      id: 'lan-' + Date.now(),
-      processo_id: processoId || '',
-      numero_cnj: proc?.numero_cnj || '',
-      cliente_nome: clienteName,
-      responsible_id: responsibleId,
-      practice_area: (area || 'civil') as any,
-      tipo: tipo as LancamentoTipo,
-      descricao: descricao.trim(),
-      valor: parseValor(valor),
-      data: vencimento,
-      vencimento,
-      status,
-      data_pagamento: status === 'pago' ? dataPagamento : '',
-      parcelas_total: status === 'parcelado' ? parcelasTotal : 1,
-      parcelas_pagas: status === 'parcelado' ? parcelasPagas : status === 'pago' ? 1 : 0,
-      created_at: new Date().toISOString().slice(0, 10),
-    };
-    onSave(lancamento);
+      await onSave(lancamento as Lancamento);
+    } catch (err) {
+      console.error('Error saving lancamento:', err);
+    } finally {
+      setIsSaving(false);
+    }
   };
 
-  const vencDiff = vencimento ? diffDays(vencimento) : null;
-
   return (
-    <div className="fixed inset-0 bg-black/20 backdrop-blur-sm z-50 flex items-center justify-center" onClick={onClose}>
-      <div className="bg-card rounded-xl shadow-xl w-full max-w-xl max-h-[90vh] flex flex-col mx-4" onClick={e => e.stopPropagation()}>
-        {/* HEADER */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-border flex-shrink-0">
-          <div className="flex items-center"><DollarSign className="w-5 h-5 text-primary mr-2" /><span className="text-lg font-semibold text-foreground">Novo Lançamento</span></div>
-          <button onClick={onClose} className="text-muted-foreground hover:text-secondary-foreground"><X className="w-5 h-5" /></button>
+    <div className="fixed inset-0 bg-black/60 backdrop-blur-md z-[100] flex items-center justify-center p-4 animate-in fade-in duration-300" onClick={onClose}>
+      <div className="bg-card w-full max-w-2xl rounded-[2.5rem] shadow-2xl overflow-hidden animate-in zoom-in-95 duration-300 border border-border flex flex-col max-h-[90vh]" onClick={e => e.stopPropagation()}>
+        {/* MODAL HEADER */}
+        <div className="px-10 py-8 border-b border-border bg-muted/30 flex items-center justify-between">
+          <div>
+            <h2 className="text-2xl font-black text-foreground tracking-tighter">Novo Lançamento</h2>
+            <p className="text-xs text-muted-foreground font-bold uppercase tracking-widest mt-1 opacity-70">Registro de movimentação financeira</p>
+          </div>
+          <button onClick={onClose} className="p-3 hover:bg-muted rounded-2xl transition-all text-muted-foreground hover:text-foreground active:scale-90"><X className="w-6 h-6" /></button>
         </div>
-        {/* BODY */}
-        <div className="overflow-y-auto flex-1 px-6 py-5">
-          <div className="grid grid-cols-2 gap-4">
-            {/* Cliente */}
-            <div className="col-span-2 relative">
-              <label className="text-sm font-medium text-foreground/80 mb-1 block">Cliente <span className="text-red-500">*</span></label>
-              {selectedCliente ? (
-                <div className="bg-primary/10 border border-primary/30 rounded-md px-3 py-1.5 flex items-center gap-2">
-                  <div className="w-5 h-5 rounded-full bg-secondary text-secondary-foreground flex items-center justify-center text-xs">{getInitials((selectedCliente as any).nome || (selectedCliente as any).razao_social || '')}</div>
-                  <span className="text-sm">{(selectedCliente as any).nome || (selectedCliente as any).razao_social}</span>
-                  <button onClick={() => { setSelectedCliente(null); setProcessoId(''); }} className="ml-auto text-muted-foreground hover:text-secondary-foreground"><X className="w-3 h-3" /></button>
+
+        {/* MODAL BODY */}
+        <div className="flex-1 overflow-y-auto p-10 custom-scrollbar">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+            
+            {/* CLIENTE & PROCESSO */}
+            <div className="space-y-6">
+              <div className="relative">
+                <label className="text-[10px] font-black text-muted-foreground uppercase tracking-[0.2em] mb-2.5 block px-1">Cliente *</label>
+                <div className="relative group">
+                  <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground group-focus-within:text-primary transition-colors" />
+                  <input 
+                    value={clienteSearch} 
+                    onChange={e => { setClienteSearch(e.target.value); setShowClienteList(true); }} 
+                    onFocus={() => setShowClienteList(true)}
+                    placeholder="Pesquisar cliente..." 
+                    className={`w-full pl-11 pr-4 py-3.5 bg-muted/50 border-2 rounded-2xl text-sm font-bold focus:outline-none transition-all ${errors.cliente ? 'border-rose-500/50 focus:border-rose-500 ring-rose-500/10' : 'border-transparent focus:border-primary/50 focus:ring-4 focus:ring-primary/5 shadow-sm hover:bg-muted/70'}`}
+                  />
                 </div>
-              ) : (
-                <div className="relative">
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                  <input value={clienteSearch} onChange={e => { setClienteSearch(e.target.value); setShowClienteList(true); }} onFocus={() => setShowClienteList(true)} placeholder="Buscar cliente..." className={`w-full pl-9 pr-3 py-2 border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-ring ${errors.cliente ? 'border-red-300' : 'border-border'}`} />
-                  {showClienteList && (
-                    <>
-                      <div className="fixed inset-0 z-10" onClick={() => setShowClienteList(false)} />
-                      <div className="absolute left-0 right-0 top-full mt-1 bg-card border border-border rounded-lg shadow-md max-h-48 overflow-y-auto z-20">
-                        {filteredClientes.map(c => {
-                          const name = (c as any).nome || (c as any).razao_social || '';
-                          return (
-                            <button key={c.id} onClick={() => handleSelectCliente(c)} className="w-full text-left px-3 py-2 hover:bg-muted flex items-center gap-2">
-                              <div className="w-6 h-6 rounded-full bg-secondary text-secondary-foreground flex items-center justify-center text-xs">{getInitials(name)}</div>
-                              <span className="text-sm">{name}</span>
-                              <span className={`text-xs px-1.5 py-0.5 rounded-full ml-auto ${areaColors[c.practice_area]}`}>{areaLabels[c.practice_area]}</span>
-                            </button>
-                          );
-                        })}
-                        {filteredClientes.length === 0 && <div className="px-3 py-2 text-sm text-muted-foreground">Nenhum cliente</div>}
-                      </div>
-                    </>
-                  )}
+                {showClienteList && filteredClientes.length > 0 && (
+                  <>
+                    <div className="fixed inset-0 z-10" onClick={() => setShowClienteList(false)} />
+                    <div className="absolute z-20 w-full mt-2 bg-card border border-border shadow-2xl rounded-2xl overflow-hidden max-h-48 overflow-y-auto animate-in fade-in slide-in-from-top-2 duration-200">
+                      {filteredClientes.map(c => (
+                        <button key={c.id} onClick={() => handleSelectCliente(c)} className="w-full text-left px-5 py-3 text-sm font-bold text-foreground hover:bg-primary/10 hover:text-primary transition-all flex items-center gap-3">
+                          <div className="w-7 h-7 rounded-lg bg-muted flex items-center justify-center text-[10px]">{getInitials(c.nome || c.razao_social || '')}</div>
+                          {c.nome || c.razao_social}
+                        </button>
+                      ))}
+                    </div>
+                  </>
+                )}
+              </div>
+
+              <div>
+                <label className="text-[10px] font-black text-muted-foreground uppercase tracking-[0.2em] mb-2.5 block px-1">Processo Vinculado</label>
+                <select 
+                  value={processoId} 
+                  onChange={e => handleSelectProcesso(e.target.value)} 
+                  disabled={!selectedCliente}
+                  className="w-full px-5 py-3.5 bg-muted/50 border-2 border-transparent rounded-2xl text-sm font-bold focus:outline-none focus:border-primary/50 focus:ring-4 focus:ring-primary/5 transition-all shadow-sm hover:bg-muted/70 cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed appearance-none"
+                >
+                  <option value="">Selecione um processo...</option>
+                  {relatedProcessos.map(p => (
+                    <option key={p.id} value={p.id}>{p.numero_cnj} {p.descricao ? `- ${p.descricao.slice(0, 30)}...` : ''}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="text-[10px] font-black text-muted-foreground uppercase tracking-[0.2em] mb-2.5 block px-1">Responsável *</label>
+                <select 
+                  value={responsibleId} 
+                  onChange={e => setResponsibleId(e.target.value)} 
+                  className={`w-full px-5 py-3.5 bg-muted/50 border-2 rounded-2xl text-sm font-bold focus:outline-none transition-all ${errors.responsible ? 'border-rose-500/50 focus:border-rose-500 ring-rose-500/10' : 'border-transparent focus:border-primary/50 focus:ring-4 focus:ring-primary/5 shadow-sm hover:bg-muted/70'} cursor-pointer appearance-none`}
+                >
+                  <option value="">Atribuir profissional...</option>
+                  {membros.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+                </select>
+              </div>
+            </div>
+
+            {/* FINANCEIRO DETAILS */}
+            <div className="space-y-6 border-l border-border/50 pl-0 md:pl-8">
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="text-[10px] font-black text-muted-foreground uppercase tracking-[0.2em] mb-2.5 block px-1">Tipo *</label>
+                  <select 
+                    value={tipo} 
+                    onChange={e => handleTipoChange(e.target.value as LancamentoTipo)} 
+                    className={`w-full px-5 py-3.5 bg-muted/50 border-2 rounded-2xl text-sm font-bold focus:outline-none transition-all ${errors.tipo ? 'border-rose-500/50 focus:border-rose-500 ring-rose-500/10' : 'border-transparent focus:border-primary/50 focus:ring-4 focus:ring-primary/5 shadow-sm hover:bg-muted/70'} cursor-pointer appearance-none`}
+                  >
+                    <option value="">Tipo...</option>
+                    {Object.entries(lancamentoTipoLabels).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="text-[10px] font-black text-muted-foreground uppercase tracking-[0.2em] mb-2.5 block px-1">Valor *</label>
+                  <div className="relative group">
+                    <span className="absolute left-4 top-1/2 -translate-y-1/2 text-xs font-black text-muted-foreground/50">R$</span>
+                    <input 
+                      value={valor} 
+                      onChange={e => setValor(e.target.value)} 
+                      onBlur={handleValorBlur}
+                      placeholder="0,00" 
+                      className={`w-full pl-10 pr-4 py-3.5 bg-muted/50 border-2 rounded-2xl text-[15px] font-black tabular-nums focus:outline-none transition-all ${errors.valor ? 'border-rose-500/50 focus:border-rose-500 ring-rose-500/10' : 'border-transparent focus:border-primary/50 focus:ring-4 focus:ring-primary/5 shadow-sm hover:bg-muted/70'}`}
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <div>
+                <label className="text-[10px] font-black text-muted-foreground uppercase tracking-[0.2em] mb-2.5 block px-1">Descrição do Lançamento *</label>
+                <input 
+                  value={descricao} 
+                  onChange={e => setDescricao(e.target.value)} 
+                  placeholder="Ex: Honorários iniciais contencioso..." 
+                  className={`w-full px-5 py-3.5 bg-muted/50 border-2 rounded-2xl text-sm font-bold focus:outline-none transition-all ${errors.descricao ? 'border-rose-500/50 focus:border-rose-500 ring-rose-500/10' : 'border-transparent focus:border-primary/50 focus:ring-4 focus:ring-primary/5 shadow-sm hover:bg-muted/70'}`}
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="text-[10px] font-black text-muted-foreground uppercase tracking-[0.2em] mb-2.5 block px-1">Vencimento *</label>
+                  <input 
+                    type="date" 
+                    value={vencimento} 
+                    onChange={e => setVencimento(e.target.value)} 
+                    className={`w-full px-5 py-3.5 bg-muted/50 border-2 rounded-2xl text-sm font-bold focus:outline-none transition-all ${errors.vencimento ? 'border-rose-500/50 focus:border-rose-500 ring-rose-500/10' : 'border-transparent focus:border-primary/50 focus:ring-4 focus:ring-primary/5 shadow-sm hover:bg-muted/70'} cursor-pointer`}
+                  />
+                </div>
+                <div>
+                  <label className="text-[10px] font-black text-muted-foreground uppercase tracking-[0.2em] mb-2.5 block px-1">Status Base</label>
+                  <select 
+                    value={status} 
+                    onChange={e => setStatus(e.target.value as LancamentoStatus)} 
+                    className="w-full px-5 py-3.5 bg-muted/50 border-2 border-transparent rounded-2xl text-sm font-bold focus:outline-none focus:border-primary/50 focus:ring-4 focus:ring-primary/5 shadow-sm hover:bg-muted/70 cursor-pointer appearance-none"
+                  >
+                    {Object.entries(lancamentoStatusLabels).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+                  </select>
+                </div>
+              </div>
+
+              {status === 'pago' && (
+                <div className="animate-in slide-in-from-top-2 duration-300">
+                  <label className="text-[10px] font-black text-muted-foreground uppercase tracking-[0.2em] mb-2.5 block px-1">Data Efetiva da Baixa *</label>
+                  <input 
+                    type="date" 
+                    value={dataPagamento} 
+                    onChange={e => setDataPagamento(e.target.value)} 
+                    className={`w-full px-5 py-3.5 bg-emerald-500/5 border-2 rounded-2xl text-sm font-bold focus:outline-none transition-all ${errors.dataPagamento ? 'border-rose-500/50 focus:border-rose-500 ring-rose-500/10' : 'border-emerald-500/30 focus:border-emerald-500 ring-emerald-500/5 shadow-sm hover:bg-emerald-500/10'} cursor-pointer`}
+                  />
+                </div>
+              )}
+
+              {status === 'parcelado' && (
+                <div className="grid grid-cols-2 gap-4 animate-in slide-in-from-top-2 duration-300">
+                  <div>
+                    <label className="text-[10px] font-black text-muted-foreground uppercase tracking-[0.2em] mb-2.5 block px-1">Nº de Parcelas</label>
+                    <input type="number" value={parcelasTotal} onChange={e => setParcelasTotal(Number(e.target.value))} className="w-full px-5 py-3.5 bg-muted/50 border-2 border-transparent rounded-2xl text-sm font-bold focus:outline-none focus:border-primary/50 transition-all shadow-sm" />
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-black text-muted-foreground uppercase tracking-[0.2em] mb-2.5 block px-1">Pagas Iniciais</label>
+                    <input type="number" value={parcelasPagas} onChange={e => setParcelasPagas(Number(e.target.value))} className="w-full px-5 py-3.5 bg-muted/50 border-2 border-transparent rounded-2xl text-sm font-bold focus:outline-none focus:border-primary/50 transition-all shadow-sm" />
+                  </div>
                 </div>
               )}
             </div>
-            {/* Processo */}
-            <div className="col-span-2">
-              <label className="text-sm font-medium text-foreground/80 mb-1 block">Processo</label>
-              <select value={processoId} onChange={e => handleSelectProcesso(e.target.value)} disabled={!selectedCliente} className={`w-full border border-border rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring ${!selectedCliente ? 'bg-muted cursor-not-allowed' : 'bg-card'}`}>
-                <option value="">{selectedCliente ? 'Selecione um processo...' : 'Selecione um cliente primeiro'}</option>
-                {relatedProcessos.map(p => <option key={p.id} value={p.id}>{p.numero_cnj}</option>)}
-              </select>
-              <p className="text-xs text-muted-foreground mt-1">Deixe em branco para lançamento avulso</p>
-            </div>
-            {/* Advogado */}
-            <div className="col-span-2">
-              <label className="text-sm font-medium text-foreground/80 mb-1 block">Advogado Responsável <span className="text-red-500">*</span></label>
-              <select value={responsibleId} onChange={e => setResponsibleId(e.target.value)} className={`w-full border rounded-md px-3 py-2 text-sm bg-card focus:outline-none focus:ring-2 focus:ring-ring ${errors.responsible ? 'border-red-300' : 'border-border'}`}>
-                <option value="">Selecione...</option>
-                {MOCK_USERS.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
-              </select>
-            </div>
-            {/* Tipo */}
-            <div>
-              <label className="text-sm font-medium text-foreground/80 mb-1 block">Tipo <span className="text-red-500">*</span></label>
-              <select value={tipo} onChange={e => handleTipoChange(e.target.value as LancamentoTipo)} className={`w-full border rounded-md px-3 py-2 text-sm bg-card focus:outline-none focus:ring-2 focus:ring-ring ${errors.tipo ? 'border-red-300' : 'border-border'}`}>
-                <option value="">Selecione...</option>
-                <option value="honorario">Honorário</option>
-                <option value="despesa">Despesa</option>
-                <option value="repasse">Repasse</option>
-                <option value="custas">Custas</option>
-              </select>
-            </div>
-            {/* Área */}
-            <div>
-              <label className="text-sm font-medium text-foreground/80 mb-1 block">Área</label>
-              <select value={area} onChange={e => setArea(e.target.value)} className="w-full border border-border rounded-md px-3 py-2 text-sm bg-card focus:outline-none focus:ring-2 focus:ring-ring">
-                <option value="">Selecione...</option>
-                <option value="trabalhista">Trabalhista</option>
-                <option value="civil">Civil</option>
-                <option value="criminal">Criminal</option>
-                <option value="previdenciario">Previdenciário</option>
-              </select>
-            </div>
-            {/* Descrição */}
-            <div className="col-span-2">
-              <label className="text-sm font-medium text-foreground/80 mb-1 block">Descrição <span className="text-red-500">*</span></label>
-              <input value={descricao} onChange={e => setDescricao(e.target.value)} placeholder="Descrição do lançamento..." className={`w-full border rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring ${errors.descricao ? 'border-red-300' : 'border-border'}`} />
-            </div>
-            {/* Valor */}
-            <div>
-              <label className="text-sm font-medium text-foreground/80 mb-1 block">Valor (R$) <span className="text-red-500">*</span></label>
-              <input value={valor} onChange={e => setValor(e.target.value)} onBlur={handleValorBlur} placeholder="R$ 0,00" className={`w-full border rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring ${errors.valor ? 'border-red-300' : 'border-border'}`} />
-            </div>
-            {/* Vencimento */}
-            <div>
-              <label className="text-sm font-medium text-foreground/80 mb-1 block">Vencimento <span className="text-red-500">*</span></label>
-              <input type="date" value={vencimento} onChange={e => setVencimento(e.target.value)} className={`w-full border rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring ${errors.vencimento ? 'border-red-300' : 'border-border'}`} />
-              {vencDiff !== null && vencDiff < 0 && <div className="flex items-center gap-1 mt-1"><AlertTriangle className="w-3 h-3 text-amber-500" /><span className="text-xs text-amber-600">Data no passado — verifique o vencimento</span></div>}
-            </div>
-            {/* Status */}
-            <div>
-              <label className="text-sm font-medium text-foreground/80 mb-1 block">Status <span className="text-red-500">*</span></label>
-              <select value={status} onChange={e => setStatus(e.target.value as LancamentoStatus)} className="w-full border border-border rounded-md px-3 py-2 text-sm bg-card focus:outline-none focus:ring-2 focus:ring-ring">
-                <option value="pendente">Pendente</option>
-                <option value="pago">Pago</option>
-                <option value="vencido">Vencido</option>
-                <option value="parcelado">Parcelado</option>
-              </select>
-            </div>
-            {/* Data pagamento (pago) */}
-            {status === 'pago' && (
-              <div>
-                <label className="text-sm font-medium text-foreground/80 mb-1 block">Data do Pagamento <span className="text-red-500">*</span></label>
-                <input type="date" value={dataPagamento} onChange={e => setDataPagamento(e.target.value)} className={`w-full border rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring ${errors.dataPagamento ? 'border-red-300' : 'border-border'}`} />
-              </div>
-            )}
-            {/* Parcelamento */}
-            {status === 'parcelado' && (
-              <>
-                <div>
-                  <label className="text-sm font-medium text-foreground/80 mb-1 block">Total de Parcelas</label>
-                  <input type="number" min={2} max={36} value={parcelasTotal} onChange={e => setParcelasTotal(Number(e.target.value))} placeholder="Ex: 6" className="w-full border border-border rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring" />
-                </div>
-                <div>
-                  <label className="text-sm font-medium text-foreground/80 mb-1 block">Parcelas Pagas</label>
-                  <input type="number" min={0} max={parcelasTotal} value={parcelasPagas} onChange={e => setParcelasPagas(Number(e.target.value))} placeholder="0" className="w-full border border-border rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring" />
-                </div>
-              </>
-            )}
           </div>
         </div>
-        {/* FOOTER */}
-        <div className="border-t border-border px-6 py-4 flex items-center justify-between flex-shrink-0 bg-card rounded-b-xl">
-          <div className="flex items-center gap-1.5"><Info className="w-4 h-4 text-muted-foreground" /><span className="text-xs text-muted-foreground">Campos marcados com * são obrigatórios</span></div>
-          <div className="flex gap-3">
-            <button onClick={onClose} className="text-sm text-secondary-foreground hover:text-foreground px-3 py-2">Cancelar</button>
-            <button onClick={handleSave} className="bg-primary text-white rounded-md px-6 py-2 text-sm font-medium hover:bg-primary/90">Salvar Lançamento</button>
-          </div>
+
+        {/* MODAL FOOTER */}
+        <div className="px-10 py-8 border-t border-border bg-muted/30 flex items-center justify-end gap-4">
+          <button 
+            onClick={onClose} 
+            disabled={isSaving}
+            className="text-sm font-black text-muted-foreground hover:bg-muted px-8 py-3.5 rounded-2xl transition-all active:scale-95 uppercase tracking-widest disabled:opacity-50"
+          >
+            Cancelar
+          </button>
+          <button 
+            onClick={handleSave} 
+            disabled={isSaving}
+            className="bg-primary text-primary-foreground text-sm font-black px-10 py-3.5 rounded-2xl shadow-xl shadow-primary/20 hover:bg-primary/90 transition-all active:scale-95 flex items-center gap-2 uppercase tracking-widest disabled:opacity-70"
+          >
+            {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
+            Confirmar Registro
+          </button>
         </div>
       </div>
     </div>

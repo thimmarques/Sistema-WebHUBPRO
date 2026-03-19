@@ -10,12 +10,12 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '.
 import { Upload, Download, Trash2, Eye, Plus } from 'lucide-react';
 
 interface ClienteDocumentosTabProps {
-  cliente: Cliente;
+  clientId: string;
   onUpload?: () => void;
 }
 
-export function ClienteDocumentosTab({ cliente, onUpload }: ClienteDocumentosTabProps) {
-  const { documentos, loading } = useDocumentos(cliente.id);
+export function ClienteDocumentosTab({ clientId, onUpload }: ClienteDocumentosTabProps) {
+  const { documentos, loading } = useDocumentos(clientId);
   const { currentUser } = useAuth();
   const { canCreate, canDelete } = usePermissions();
 

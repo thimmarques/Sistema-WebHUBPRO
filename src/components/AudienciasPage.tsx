@@ -20,10 +20,10 @@ import {
 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToastContext } from '@/contexts/ToastContext';
-import { MOCK_USERS } from '@/data/mockUsers';
-import { getEventos, saveEventos } from '@/data/mockEventos';
-import { getProcessos } from '@/data/mockProcessos';
-import { loadAtividades, saveAtividades } from '@/data/mockAtividades';
+import { useEventos } from '@/hooks/useEventos';
+import { useProcessos } from '@/hooks/useProcessos';
+import { useEquipe } from '@/hooks/useEquipe';
+import { useAuditoria } from '@/hooks/useAuditoria';
 import {
   Evento,
   EventoTipo,
@@ -86,7 +86,11 @@ export default function AudienciasPage({ onNavigateProcessoDetail }: AudienciasP
   const { showToast } = useToastContext();
   const admin = isAdmin();
 
-  const [allEventos, setAllEventos] = useState<Evento[]>(() => getEventos());
+  const { eventos: hookEventos, saveEvento } = useEventos();
+  const { processos: hookProcessos } = useProcessos();
+  const { membros } = useEquipe();
+  const { logAtividade } = useAuditoria();
+
   const [activeTab, setActiveTab] = useState<'todas' | 'hoje' | 'semana' | 'mes' | 'realizadas'>('todas');
   const [search, setSearch] = useState('');
   const [filterArea, setFilterArea] = useState('');
@@ -96,7 +100,8 @@ export default function AudienciasPage({ onNavigateProcessoDetail }: AudienciasP
   const [resultModal, setResultModal] = useState<UnifiedAudiencia | null>(null);
   const [openDropdown, setOpenDropdown] = useState<string | null>(null);
 
-  const allProcessos = useMemo(() => getProcessos(), []);
+  const allEventos = useMemo(() => hookEventos, [hookEventos]);
+  const allProcessos = useMemo(() => hookProcessos, [hookProcessos]);
 
   /* ─── Build unified audiência list ─── */
   const audiencias = useMemo(() => {
@@ -200,10 +205,9 @@ export default function AudienciasPage({ onNavigateProcessoDetail }: AudienciasP
   const weekCount = audiencias.filter((a) => a.data >= mondayStr && a.data <= sundayStr).length;
   const realizadasCount = audiencias.filter((a) => a.audiencia_status === 'realizada').length;
   const prazosUrgentCount = useMemo(() => {
-    const evts = filterByUser(getEventos(), currentUser!.id, admin);
     const in7 = formatISO(new Date(today.getTime() + 7 * 86400000));
-    return evts.filter((e) => e.tipo === 'prazo' && e.data >= todayStr && e.data <= in7).length;
-  }, [allEventos, currentUser, admin]);
+    return allEventos.filter((e) => e.tipo === 'prazo' && e.data >= todayStr && e.data <= in7).length;
+  }, [allEventos, todayStr]);
 
   /* ─── Group by date ─── */
   const grouped = useMemo(() => {
@@ -232,7 +236,7 @@ export default function AudienciasPage({ onNavigateProcessoDetail }: AudienciasP
   }, [filtered, todayStr, mondayStr, sundayStr]);
 
   function reload() {
-    setAllEventos(getEventos());
+    // Hooks handle reload
   }
 
   function handleRegistrarResultado(aud: UnifiedAudiencia) {
@@ -313,7 +317,7 @@ export default function AudienciasPage({ onNavigateProcessoDetail }: AudienciasP
         {admin && (
           <select value={filterResponsible} onChange={(e) => setFilterResponsible(e.target.value)} className="border border-border rounded-md px-3 py-2 text-sm text-secondary-foreground focus:outline-none focus:ring-2 focus:ring-ring">
             <option value="">Todos Responsáveis</option>
-            {MOCK_USERS.map((u) => (
+            {membros.map((u) => (
               <option key={u.id} value={u.id}>{u.name}</option>
             ))}
           </select>
@@ -366,7 +370,7 @@ export default function AudienciasPage({ onNavigateProcessoDetail }: AudienciasP
                 <div className="flex-1 border-t border-border ml-2" />
               </div>
               {group.items.map((aud) => {
-                const lawyer = MOCK_USERS.find((u) => u.id === aud.responsible_id);
+                const lawyer = membros.find((u) => u.id === aud.responsible_id);
                 const d = new Date(aud.data + 'T00:00:00');
                 const diff = Math.ceil((d.getTime() - new Date(todayStr + 'T00:00:00').getTime()) / 86400000);
                 const isT = aud.data === todayStr;
@@ -487,6 +491,8 @@ export default function AudienciasPage({ onNavigateProcessoDetail }: AudienciasP
           processos={filterByUser(allProcessos, currentUser!.id, admin)}
           currentUser={currentUser!}
           isAdmin={admin}
+          membros={membros}
+          onSaveEvento={saveEvento}
         />
       )}
 
@@ -496,6 +502,10 @@ export default function AudienciasPage({ onNavigateProcessoDetail }: AudienciasP
           audiencia={resultModal}
           onClose={() => setResultModal(null)}
           onSave={() => { reload(); setResultModal(null); showToast('Resultado registrado com sucesso', 'success'); }}
+          allEventos={allEventos}
+          allProcessos={allProcessos}
+          saveEvento={saveEvento}
+          logAtividade={logAtividade}
         />
       )}
     </div>
@@ -511,9 +521,11 @@ interface NovaAudienciaModalProps {
   processos: any[];
   currentUser: any;
   isAdmin: boolean;
+  membros: any[];
+  onSaveEvento: (e: any) => Promise<void>;
 }
 
-function NovaAudienciaModal({ onClose, onSave, processos, currentUser, isAdmin }: NovaAudienciaModalProps) {
+function NovaAudienciaModal({ onClose, onSave, processos, currentUser, isAdmin, membros, onSaveEvento }: NovaAudienciaModalProps) {
   const [title, setTitle] = useState('');
   const [audienciaTipo, setAudTipo] = useState<AudienciaTipo>('instrucao');
   const [audStatus, setAudStatus] = useState<AudienciaStatus>('agendada');
@@ -543,33 +555,35 @@ function NovaAudienciaModal({ onClose, onSave, processos, currentUser, isAdmin }
     if (!local) setLocal(p.vara);
   }
 
-  function handleSave() {
+  async function handleSave() {
     const errs: Record<string, boolean> = {};
     if (!title.trim()) errs.title = true;
     if (!data) errs.data = true;
     if (!horaInicio) errs.horaInicio = true;
     if (Object.keys(errs).length > 0) { setErrors(errs); return; }
 
-    const allEvt = getEventos();
-    allEvt.push({
-      id: 'evt-' + Date.now(),
-      title,
-      tipo: 'audiencia',
-      processo_id: processoId,
-      cliente_nome: clienteNome,
-      data,
-      data_inicio: data,
-      hora_inicio: horaInicio,
-      hora_fim: horaFim,
-      local,
-      responsible_id: responsibleId,
-      notes,
-      created_at: new Date().toISOString().slice(0, 10),
-      audiencia_tipo: audienciaTipo,
-      audiencia_status: audStatus,
-    });
-    saveEventos(allEvt);
-    onSave();
+    try {
+      await onSaveEvento({
+        id: 'evento-' + Date.now(),
+        title,
+        tipo: 'audiencia',
+        processo_id: processoId,
+        cliente_nome: clienteNome,
+        data,
+        data_inicio: data,
+        hora_inicio: horaInicio,
+        hora_fim: horaFim,
+        local,
+        responsible_id: responsibleId,
+        notes,
+        created_at: new Date().toISOString().slice(0, 10),
+        audiencia_tipo: audienciaTipo,
+        audiencia_status: audStatus,
+      });
+      onSave();
+    } catch (error) {
+      console.error('Error saving audience:', error);
+    }
   }
 
   const fc = (name: string) => `w-full border ${errors[name] ? 'border-red-400' : 'border-border'} rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent`;
@@ -658,7 +672,7 @@ function NovaAudienciaModal({ onClose, onSave, processos, currentUser, isAdmin }
               <label className="block text-xs font-medium text-secondary-foreground mb-1">Responsável*</label>
               {isAdmin ? (
                 <select value={responsibleId} onChange={(e) => setResponsibleId(e.target.value)} className="w-full border border-border rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring">
-                  {MOCK_USERS.map((u) => (
+                  {membros.map((u) => (
                     <option key={u.id} value={u.id}>{u.name}</option>
                   ))}
                 </select>
@@ -690,9 +704,13 @@ interface RegistrarResultadoModalProps {
   audiencia: UnifiedAudiencia;
   onClose: () => void;
   onSave: () => void;
+  allEventos: any[];
+  allProcessos: any[];
+  saveEvento: (e: any) => Promise<void>;
+  logAtividade: (a: any) => Promise<void>;
 }
 
-function RegistrarResultadoModal({ audiencia, onClose, onSave }: RegistrarResultadoModalProps) {
+function RegistrarResultadoModal({ audiencia, onClose, onSave, allEventos, allProcessos, saveEvento, logAtividade }: RegistrarResultadoModalProps) {
   const [resultado, setResultado] = useState('');
   const [dataRealizacao, setDataRealizacao] = useState(audiencia.data);
   const [detalhes, setDetalhes] = useState('');
@@ -706,33 +724,29 @@ function RegistrarResultadoModal({ audiencia, onClose, onSave }: RegistrarResult
     'Outra decisão',
   ];
 
-  function handleSave() {
+  async function handleSave() {
     if (!resultado || !detalhes.trim()) return;
 
-    // Update event status
-    const allEvt = getEventos();
-    const idx = allEvt.findIndex((e) => e.id === audiencia.id);
-    if (idx >= 0) {
-      allEvt[idx] = { ...allEvt[idx], audiencia_status: 'realizada' };
-      saveEventos(allEvt);
+    try {
+      // Update event status
+      const evt = allEventos.find((e) => e.id === audiencia.id);
+      if (evt) {
+        await saveEvento({ ...evt, audiencia_status: 'realizada' });
+      }
+
+      // Create atividade
+      const proc = allProcessos.find((p) => p.id === audiencia.processo_id);
+      await logAtividade({
+        tipo: 'audiencia_realizada',
+        parent_id: audiencia.processo_id, // Link to process
+        descricao: `${resultado} — ${detalhes.slice(0, 100)}`,
+        usuario_id: audiencia.responsible_id,
+      });
+
+      onSave();
+    } catch (error) {
+      console.error('Error registering result:', error);
     }
-
-    // Create atividade
-    const atividades = loadAtividades();
-    const proc = getProcessos().find((p) => p.id === audiencia.processo_id);
-    atividades.push({
-      id: 'atv-' + Date.now(),
-      client_id: proc ? proc.polo_ativo_id : '',
-      processo_id: audiencia.processo_id,
-      responsible_id: audiencia.responsible_id,
-      tipo: 'audiencia_realizada',
-      descricao: `${resultado} — ${detalhes.slice(0, 100)}`,
-      data: new Date().toISOString(),
-      usuario_nome: MOCK_USERS.find((u) => u.id === audiencia.responsible_id)?.name || '',
-    });
-    saveAtividades(atividades);
-
-    onSave();
   }
 
   return (

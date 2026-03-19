@@ -4,7 +4,7 @@ import { supabase } from '../lib/supabase';
 import { useAuth } from './useAuth';
 import { usePermissions } from './usePermissions';
 
-export function useEventos(processoId?: string) {
+export function useEventos(processoId?: string, clienteId?: string) {
   const { currentUser } = useAuth();
   const { role, currentScope } = usePermissions();
   
@@ -24,23 +24,21 @@ export function useEventos(processoId?: string) {
         e.created_by === currentUser?.id
       );
     } else if (role === 'estagiario') {
-      // Estagiário vê apenas eventos de processos do seu advogado responsável
-      filtered = filtered.filter(e => 
-        e.responsible_id === currentScope?.responsible_id
-      );
+      // Estagiário vê apenas eventos que ele criou (simplificado por enquanto)
+      filtered = filtered.filter(e => e.created_by === currentUser?.id);
     }
     // Admin vê tudo
     
-    // Filtrar por processoId se fornecido
-    if (processoId) {
-      filtered = filtered.filter(e => e.processo_id === processoId);
+    // Filtrar por clienteId se fornecido (e se não foi filtrado na query)
+    if (clienteId) {
+      filtered = filtered.filter(e => e.processo?.polo_ativo_id === clienteId);
     }
     
     // Ordenar por data
     return filtered.sort((a, b) => 
       new Date(a.data_inicio).getTime() - new Date(b.data_inicio).getTime()
     );
-  }, [eventos, processoId, role, currentUser?.id, currentScope?.responsible_id]);
+  }, [eventos, processoId, clienteId, role, currentUser?.id, currentScope]);
 
   // Carregar eventos do Supabase
   const load = useCallback(async () => {
@@ -49,7 +47,13 @@ export function useEventos(processoId?: string) {
     try {
       let query = supabase
         .from('eventos')
-        .select('*')
+        .select(`
+          *,
+          processo:processo_id (
+            numero_processo,
+            polo_ativo_id
+          )
+        `)
         .is('deleted_at', null) // Excluir soft-deleted
         .order('data_inicio', { ascending: true });
 
@@ -58,13 +62,23 @@ export function useEventos(processoId?: string) {
         query = query.eq('processo_id', processoId);
       }
 
+      // Filtrar por clienteId se fornecido (via join)
+      if (clienteId) {
+        query = query.eq('processo.polo_ativo_id', clienteId);
+      }
+
       const { data, error: err } = await query;
 
       if (err) {
         throw err;
       }
 
-      setEventos(data || []);
+      const formattedData = (data || []).map((e: any) => ({
+        ...e,
+        processo_numero: e.processo?.numero_processo
+      }));
+
+      setEventos(formattedData);
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Erro ao carregar eventos';
       setError(message);

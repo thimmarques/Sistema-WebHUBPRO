@@ -1,0 +1,75 @@
+# AUDITORIA DO SISTEMA WEBHUBPRO (SaaS JURÍDICO)
+**Data da Auditoria:** 19 de Março de 2026  
+**Status Global:** ⚠️ ALTO RISCO (Estruturalmente completo, mas funcionalmente desconectado)
+
+---
+
+## 1. RESUMO DA AUDITORIA DE BANCO DE DADOS (Supabase)
+
+### 1.1 Validação de Estrutura
+- **Tabelas Identificadas:** 22 tabelas principais (profiles, clientes_base, processos, eventos, lancamentos, etc.).
+- **Campos Obrigatórios:** 
+  - ✅ Mantidos: `id`, `created_at`, `updated_at`.
+  - ⚠️ Inconsistentes: `deleted_at` ausente na `clientes_base` (embora presente em subtabelas como `clientes_civil`).
+- **Data Types/ENUMs:** 
+  - ❌ **CRÍTICO:** Inconsistência no ENUM `polo_previdenciario` (`Beneficiário` vs `beneficiário`).
+  - ✅ Outros ENUMs (user_role, cliente_type, practice_area) estão corretos.
+- **Constraints:** ✅ PKs e FKs bem definidas em todo o esquema.
+
+### 1.2 RLS (Row Level Security)
+- ❌ **ESTADO CRÍTICO:** RLS está **DESATIVADO** em tabelas chaves:
+  - `processos`
+  - `lancamentos`
+  - `clientes_base`
+  - `clientes_criminal`, `clientes_trabalhista`, `clientes_civil`, `clientes_previdenciario`
+  - `atividades`
+- ✅ **ATIVADO:** `profiles`, `clientes`, `eventos`, `invites`, `integracoes`, `audit_logs`, `case_movements`.
+
+### 1.3 Triggers & Functions
+- ✅ **FUNCIONAL:** Triggers de auditoria (`log_auditoria_insert/update/delete`) estão instalados e gravando na tabela `atividades`.
+- ✅ **FUNCIONAL:** Funções de controle de timestamp (`set_updated_at`) funcionando em todas as tabelas principais.
+
+---
+
+## 2. RESUMO DA AUDITORIA DE FRONTEND (React + TS)
+
+### 2.1 Componentes & UI
+- ✅ **QUALIDADE VISUAL:** Design moderno (shadcn/ui), responsivo e com excelente UX (glassmorphism/dark mode).
+- ❌ **COMPORTAMENTO DE DADOS:** **QUASE TOTALMENTE MOCKADO.**
+  - `Dashboard.tsx`: 100% Mock (KPIs, Atividades, Audiências são hardcoded).
+  - `ClientesPage.tsx`: Usa `MOCK_CLIENTES` via `loadClientes` (LocalStorage).
+  - `ProcessosPage.tsx`: Usa `getProcessos` via `mockProcessos.ts`.
+  - `FinanceiroPage.tsx`: Usa `loadLancamentos` (LocalStorage).
+
+### 2.2 Hooks & Supabase Integration
+- ⚠️ **HOOKS EXISTENTES MAS NÃO UTILIZADOS:**
+  - `useClientes.ts`: Totalmente integrado ao Supabase, mas **NÃO É IMPORTADO** pelas páginas `ClientesPage`.
+  - `useProcessos.ts`: Usado apenas na `ProcessoDetalhe.tsx`, mas a listagem principal na `ProcessosPage` usa Mocks.
+  - `useAuth.ts`: **FAKE AUTH.** O `AuthContext.tsx` valida contra `MOCK_USERS` e ignora o Supabase Auth.
+
+### 2.3 RBAC (Controle de Acesso)
+- ⚠️ **SEGURANÇA:** O RBAC é processado puramente em memória (no frontend). Como o RLS está desativado no Supabase, requisições diretas via API poderiam vazar todos os dados.
+
+---
+
+## 3. IDENTIFICAÇÃO DE GAPS & VULNERABILIDADES
+
+| Item | Gravidade | Descrição |
+| :--- | :--- | :--- |
+| **Auth** | 🔴 Crítico | O sistema usa login simulado. Credenciais do Supabase Auth não são usadas. |
+| **RLS Gap** | 🔴 Crítico | Tabelas de Processos e Clientes sem RLS. Risco total de vazamento de dados entre inquilinos. |
+| **Data Sync** | 🟡 Alto | UI e Banco de Dados vivem em mundos diferentes (LocalStorage vs Tabelas Supabase). |
+| **Activity Log** | 🟡 Médio | `activityLogger.ts` só loga no console (tem um TODO para o Supabase não resolvido). Triggers do DB salvam dados diferentes do frontend. |
+
+---
+
+## 4. PLANO DE CORREÇÃO (PRÓXIMOS PASSOS)
+
+1. **Ativar RLS IMEDIATAMENTE** nas tabelas: `clientes_base`, `processos`, `lancamentos`.
+2. **Migrar AuthContext** para usar `supabase.auth.signInWithPassword`.
+3. **Refatorar Páginas:** Alterar as importações de `mockData` para os hooks (`useClientes`, `useProcessos`, `useLancamentos`).
+4. **Corrigir ENUMs:** Normalizar `polo_previdenciario` para minúsculo.
+5. **Completar Activity Logger:** Ativar o insert real na tabela `atividades` via hook `useAuth`.
+
+---
+*Relatório assinado por: Antigravity AI Auditor*

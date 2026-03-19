@@ -19,11 +19,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToastContext } from '@/contexts/ToastContext';
-import { MOCK_USERS } from '@/data/mockUsers';
-import { getProcessos } from '@/data/mockProcessos';
-import { loadClientes } from '@/data/mockClientes';
-import { getEventos } from '@/data/mockEventos';
-import { loadLancamentos } from '@/data/mockLancamentos';
+import { useEquipe, useProcessos, useClientes, useEventos, useLancamentos } from '@/hooks';
 import { areaLabels, areaColors } from '@/types/processo';
 import UserAvatar from './UserAvatar';
 import EmptyState from './EmptyState';
@@ -45,13 +41,6 @@ const roleLabels: Record<string, string> = { admin: 'Admin', advogado: 'Advogado
 const roleBadgeColors: Record<string, string> = { admin: 'bg-accent/10 text-accent', advogado: 'bg-primary/20 text-primary', assistente: 'bg-secondary/20 text-secondary-foreground', estagiario: 'bg-muted/80 text-muted-foreground' };
 const roleOrder: Record<string, number> = { admin: 0, advogado: 1, assistente: 2, estagiario: 3 };
 
-const mockPhones: Record<string, string> = {
-  'user-001': '(11) 99876-5432',
-  'user-002': '(11) 98765-4321',
-  'user-003': '(11) 97654-3210',
-  'user-004': '(11) 91234-5678',
-  'user-005': '(11) 94567-8901',
-};
 
 function formatBRL(value: number): string {
   return value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
@@ -66,7 +55,6 @@ export default function EquipePage() {
   const [filterArea, setFilterArea] = useState('');
   const [filterRole, setFilterRole] = useState('');
   const [inviteOpen, setInviteOpen] = useState(false);
-  const [profileUser, setProfileUser] = useState<typeof MOCK_USERS[0] | null>(null);
   const [openDropdown, setOpenDropdown] = useState<string | null>(null);
   const [pendingUsers, setPendingUsers] = useState<PendingUser[]>(() => {
     const stored = localStorage.getItem('whp_usuarios_pendentes');
@@ -82,11 +70,14 @@ export default function EquipePage() {
   const [invPhone, setInvPhone] = useState('');
   const [invErrors, setInvErrors] = useState<Record<string, string>>({});
 
-  /* data */
-  const allProcessos = useMemo(() => getProcessos(), []);
-  const allClientes = useMemo(() => loadClientes(), []);
-  const allEventos = useMemo(() => getEventos(), []);
-  const allLancamentos = useMemo(() => admin ? loadLancamentos() : [], [admin]);
+  /* hooks */
+  const { membros, loading: loadingEquipe } = useEquipe();
+  const { processos: allProcessos, loading: loadingProcessos } = useProcessos();
+  const { clientes: allClientes, loading: loadingClientes } = useClientes();
+  const { eventos: allEventos, loading: loadingEventos } = useEventos();
+  const { lancamentos: allLancamentos, loading: loadingLancamentos } = useLancamentos();
+
+  const [profileUser, setProfileUser] = useState<any | null>(null);
 
   const now = new Date();
   const monthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
@@ -94,48 +85,70 @@ export default function EquipePage() {
   const getUserStats = (userId: string) => {
     const processos = allProcessos.filter(p => p.responsible_id === userId && p.status !== 'encerrado').length;
     const clientes = allClientes.filter(c => c.responsible_id === userId).length;
-    const audiencias = allEventos.filter(e => e.tipo === 'audiencia' && e.responsible_id === userId && e.data.startsWith(monthKey)).length;
+    
+    // Filtro de eventos para o mês atual
+    const audiencias = allEventos.filter(e => 
+      e.tipo === 'audiencia' && 
+      e.responsible_id === userId && 
+      e.data.includes(monthKey)
+    ).length;
+    
     return { processos, clientes, audiencias };
   };
 
   const getFinancialStats = (userId: string) => {
     if (!admin) return { aReceber: 0, recebido: 0 };
     const userLanc = allLancamentos.filter(l => l.responsible_id === userId);
-    const aReceber = userLanc.filter(l => l.status === 'pendente' || l.status === 'parcelado').reduce((s, l) => s + l.valor, 0);
-    const recebido = userLanc.filter(l => l.status === 'pago' && l.data_pagamento && l.data_pagamento.startsWith(monthKey)).reduce((s, l) => s + l.valor, 0);
+    
+    const aReceber = userLanc
+      .filter(l => l.status === 'pendente' || l.status === 'vencido' || l.status === 'parcelado')
+      .reduce((s, l) => s + (l.valor || 0), 0);
+      
+    const recebido = userLanc
+      .filter(l => l.status === 'pago' && l.data_pagamento && l.data_pagamento.includes(monthKey))
+      .reduce((s, l) => s + (l.valor || 0), 0);
+      
     return { aReceber, recebido };
   };
 
   /* stats */
-  const totalMembers = MOCK_USERS.length + pendingUsers.length;
-  const totalAdvogados = MOCK_USERS.filter(u => u.role === 'advogado' || u.role === 'admin').length;
+  const totalMembers = membros.length + pendingUsers.length;
+  const totalAdvogados = membros.filter(u => u.role === 'advogado' || u.role === 'socio' || u.role === 'admin').length;
   const totalProcessosAtivos = allProcessos.filter(p => p.status !== 'encerrado').length;
 
   /* filtering + sorting */
   const filteredUsers = useMemo(() => {
-    let users = [...MOCK_USERS];
+    let users = [...membros];
     if (search) {
       const s = search.toLowerCase();
-      users = users.filter(u => u.name.toLowerCase().includes(s) || u.oab.toLowerCase().includes(s) || u.practice_areas.some(a => areaLabels[a]?.toLowerCase().includes(s)));
+      users = users.filter(u => 
+        (u.name || '').toLowerCase().includes(s) || 
+        (u.oab || '').toLowerCase().includes(s) || 
+        (u.practice_areas || []).some(a => areaLabels[a]?.toLowerCase().includes(s))
+      );
     }
-    if (filterArea) users = users.filter(u => u.practice_areas.includes(filterArea as any));
+    if (filterArea) users = users.filter(u => (u.practice_areas || []).includes(filterArea as any));
     if (filterRole) users = users.filter(u => u.role === filterRole);
+    
     users.sort((a, b) => {
       const ro = (roleOrder[a.role] || 99) - (roleOrder[b.role] || 99);
       if (ro !== 0) return ro;
       return (a.name || '').localeCompare(b.name || '');
     });
     return users;
-  }, [search, filterArea, filterRole]);
+  }, [membros, search, filterArea, filterRole]);
 
   const filteredPending = useMemo(() => {
     let users = [...pendingUsers];
     if (search) {
       const s = search.toLowerCase();
-      users = users.filter(u => u.name.toLowerCase().includes(s) || u.email.toLowerCase().includes(s));
+      users = users.filter(u => 
+        (u.name || '').toLowerCase().includes(s) || 
+        (u.email || '').toLowerCase().includes(s)
+      );
     }
     if (filterRole) users = users.filter(u => u.role === filterRole);
-    if (filterArea) users = users.filter(u => u.practice_areas.includes(filterArea));
+    if (filterArea) users = users.filter(u => (u.practice_areas || []).includes(filterArea as any));
     return users;
   }, [pendingUsers, search, filterArea, filterRole]);
 
@@ -297,7 +310,7 @@ export default function EquipePage() {
                 {/* Contact */}
                 <div className="space-y-1.5">
                   <div className="flex items-center gap-2"><Mail className="w-3.5 h-3.5 text-muted-foreground/80" /><span className="text-sm text-secondary-foreground">{user.email}</span></div>
-                  <div className="flex items-center gap-2"><Phone className="w-3.5 h-3.5 text-muted-foreground/80" /><span className="text-sm text-secondary-foreground">{mockPhones[user.id] || '(11) 90000-0000'}</span></div>
+                  <div className="flex items-center gap-2"><Phone className="w-3.5 h-3.5 text-muted-foreground/80" /><span className="text-sm text-secondary-foreground">{user.phone || '(11) 90000-0000'}</span></div>
                 </div>
 
                 {/* Stats */}
@@ -382,7 +395,7 @@ export default function EquipePage() {
               <div className="text-xs text-muted-foreground uppercase tracking-wide mb-3">Contato</div>
               <div className="space-y-2 mb-4">
                 <div className="flex items-center gap-2.5"><Mail className="w-4 h-4 text-muted-foreground/80" /><span className="text-sm text-foreground/80">{profileUser.email}</span></div>
-                <div className="flex items-center gap-2.5"><Phone className="w-4 h-4 text-muted-foreground/80" /><span className="text-sm text-foreground/80">{mockPhones[profileUser.id] || '(11) 90000-0000'}</span></div>
+                <div className="flex items-center gap-2.5"><Phone className="w-4 h-4 text-muted-foreground/80" /><span className="text-sm text-foreground/80">{profileUser.phone || '(11) 90000-0000'}</span></div>
               </div>
               <div className="border-t border-border/50 my-4" />
               <div className="text-xs text-muted-foreground uppercase tracking-wide mb-3">Atividade</div>

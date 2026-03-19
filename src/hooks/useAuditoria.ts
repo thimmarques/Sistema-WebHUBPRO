@@ -18,20 +18,20 @@ export function useAuditoria(clienteId?: string, processoId?: string) {
     
     // RBAC: Apenas admin vê tudo, outros veem apenas seus logs
     if (role !== 'admin') {
-      filtered = filtered.filter(a => a.usuario_id === currentUser?.id);
+      filtered = filtered.filter(a => a.created_by === currentUser?.id);
     }
     
     // Filtrar por clienteId se fornecido
     if (clienteId) {
       filtered = filtered.filter(a => 
-        a.entidade === 'cliente' && a.entidade_id === clienteId
+        a.tabela === 'clientes' && a.registro_id === clienteId
       );
     }
     
     // Filtrar por processoId se fornecido
     if (processoId) {
       filtered = filtered.filter(a => 
-        a.entidade === 'processo' && a.entidade_id === processoId
+        a.tabela === 'processos' && a.registro_id === processoId
       );
     }
     
@@ -48,17 +48,20 @@ export function useAuditoria(clienteId?: string, processoId?: string) {
     try {
       let query = supabase
         .from('atividades')
-        .select('*')
+        .select(`
+          *,
+          profiles:created_by (nome)
+        `)
         .order('created_at', { ascending: false });
 
       // Filtrar por clienteId se fornecido
       if (clienteId) {
-        query = query.eq('cliente_id', clienteId);
+        query = query.eq('tabela', 'clientes').eq('registro_id', clienteId);
       }
       
       // Filtrar por processoId se fornecido
       if (processoId) {
-        query = query.eq('processo_id', processoId);
+        query = query.eq('tabela', 'processos').eq('registro_id', processoId);
       }
 
       const { data, error: err } = await query;
@@ -67,7 +70,12 @@ export function useAuditoria(clienteId?: string, processoId?: string) {
         throw err;
       }
 
-      setAtividades(data || []);
+      const formattedData = (data || []).map((a: any) => ({
+        ...a,
+        usuario_nome: a.profiles?.nome
+      }));
+
+      setAtividades(formattedData);
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Erro ao carregar auditoria';
       setError(message);
@@ -88,7 +96,7 @@ export function useAuditoria(clienteId?: string, processoId?: string) {
     if (role !== 'admin' && currentUser?.id !== usuarioId) {
       return [];
     }
-    return atividades.filter(a => a.usuario_id === usuarioId);
+    return atividades.filter(a => a.created_by === usuarioId);
   }, [atividades, role, currentUser?.id]);
 
   // Obter atividades por tipo
@@ -104,6 +112,56 @@ export function useAuditoria(clienteId?: string, processoId?: string) {
     });
   }, [atividades]);
 
+  // Registrar atividade
+  const logAtividade = useCallback(async (atividade: Partial<Atividade>) => {
+    try {
+      if (!currentUser?.id) return;
+
+      const { data, error: err } = await supabase
+        .from('atividades')
+        .insert([{
+          ...atividade,
+          created_by: atividade.created_by || currentUser.id,
+          created_at: new Date().toISOString(),
+        }])
+        .select(`
+          *,
+          profiles:created_by (nome)
+        `)
+        .single();
+
+      if (err) throw err;
+      
+      const formatted = {
+        ...data,
+        usuario_nome: data.profiles?.nome
+      };
+      
+      setAtividades(prev => [formatted, ...prev]);
+      return formatted;
+    } catch (err) {
+      console.error('Erro ao registrar auditoria:', err);
+      throw err;
+    }
+  }, [currentUser?.id]);
+
+  // Deletar atividade (se necessário)
+  const deleteAtividade = useCallback(async (id: string) => {
+    try {
+      const { error: err } = await supabase
+        .from('atividades')
+        .delete()
+        .eq('id', id);
+
+      if (err) throw err;
+      
+      setAtividades(prev => prev.filter(a => a.id !== id));
+    } catch (err) {
+      console.error('Erro ao deletar auditoria:', err);
+      throw err;
+    }
+  }, []);
+
   return {
     atividades: atividadesFiltradas,
     loading,
@@ -111,6 +169,8 @@ export function useAuditoria(clienteId?: string, processoId?: string) {
     getAtividadesPorUsuario,
     getAtividadesPorTipo,
     getAtividadesPorData,
+    logAtividade,
+    deleteAtividade,
     reload: load,
   };
 }

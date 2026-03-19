@@ -20,12 +20,12 @@ import {
 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToastContext } from '@/contexts/ToastContext';
-import { MOCK_USERS } from '@/data/mockUsers';
-import { getProcessos } from '@/data/mockProcessos';
-import { loadClientes } from '@/data/mockClientes';
-import { loadLancamentos } from '@/data/mockLancamentos';
-import { getEventos } from '@/data/mockEventos';
-import { loadAtividades } from '@/data/mockAtividades';
+import { useProcessos } from '@/hooks/useProcessos';
+import { useClientes } from '@/hooks/useClientes';
+import { useLancamentos } from '@/hooks/useLancamentos';
+import { useEventos } from '@/hooks/useEventos';
+import { useAuditoria } from '@/hooks/useAuditoria';
+import { useEquipe } from '@/hooks/useEquipe';
 import { ProcessoStatus, statusLabels, statusColors, areaLabels, areaColors } from '@/types/processo';
 import EmptyState from './EmptyState';
 import UserAvatar from './UserAvatar';
@@ -85,18 +85,19 @@ export default function RelatoriosPage() {
   const [activeReport, setActiveReport] = useState<ReportType | null>(null);
   const [periodFilter, setPeriodFilter] = useState('todos');
 
-  /* ─── load data ─── */
-  const allProcessos = useMemo(() => filterByUser(getProcessos(), currentUser!.id, admin), [currentUser, admin]);
-  const allClientes = useMemo(() => {
-    const cl = loadClientes();
-    return admin ? cl : cl.filter(c => c.responsible_id === currentUser!.id);
-  }, [currentUser, admin]);
-  const allLancamentos = useMemo(() => admin ? loadLancamentos() : [], [admin]);
-  const allEventos = useMemo(() => filterByUser(getEventos(), currentUser!.id, admin), [currentUser, admin]);
-  const allAtividades = useMemo(() => {
-    const at = loadAtividades();
-    return admin ? at : at.filter(a => a.responsible_id === currentUser!.id);
-  }, [currentUser, admin]);
+  /* ─── load data via hooks ─── */
+  const { processos } = useProcessos();
+  const { clientes: cl } = useClientes();
+  const { lancamentos: ll } = useLancamentos();
+  const { eventos: ev } = useEventos();
+  const { atividades: at } = useAuditoria();
+  const { membros } = useEquipe();
+
+  const allProcessos = useMemo(() => filterByUser(processos, currentUser!.id, admin), [processos, currentUser, admin]);
+  const allClientes = useMemo(() => admin ? cl : cl.filter(c => c.responsible_id === currentUser!.id), [cl, currentUser, admin]);
+  const allLancamentos = useMemo(() => admin ? ll : [], [ll, admin]);
+  const allEventos = useMemo(() => filterByUser(ev, currentUser!.id, admin), [ev, currentUser, admin]);
+  const allAtividades = useMemo(() => admin ? at : at.filter(a => a.usuario_id === currentUser!.id), [at, currentUser, admin]);
 
   /* ─── processos metrics ─── */
   const processosPorStatus = useMemo(() => {
@@ -151,15 +152,15 @@ export default function RelatoriosPage() {
     allProcessos.filter(p => p.status !== 'encerrado').forEach(p => { counts[p.responsible_id] = (counts[p.responsible_id] || 0) + 1; });
     const top = Object.entries(counts).sort((a, b) => b[1] - a[1])[0];
     if (!top) return null;
-    const user = MOCK_USERS.find(u => u.id === top[0]);
+    const user = membros.find(u => u.id === top[0]);
     return user ? { name: user.name, count: top[1] } : null;
-  }, [allProcessos, admin]);
+  }, [allProcessos, membros, admin]);
 
   /* ─── inadimplencia por advogado (admin) ─── */
   const inadimplenciaPorAdvogado = useMemo(() => {
     if (!admin) return [];
     const m: Record<string, { name: string; avatar_color: string; aReceber: number; vencido: number; recebido: number }> = {};
-    MOCK_USERS.filter(u => u.role === 'advogado' || u.role === 'admin').forEach(u => {
+    membros.filter(u => u.role === 'advogado' || u.role === 'admin').forEach(u => {
       m[u.id] = { name: u.name, avatar_color: u.avatar_color, aReceber: 0, vencido: 0, recebido: 0 };
     });
     allLancamentos.forEach(l => {
@@ -177,14 +178,14 @@ export default function RelatoriosPage() {
     return allLancamentos.filter(l => l.status === 'vencido').map(l => ({
       ...l,
       diasAtraso: Math.abs(daysDiff(l.vencimento)),
-      advogado: MOCK_USERS.find(u => u.id === l.responsible_id),
+      advogado: membros.find(u => u.id === l.responsible_id),
     }));
-  }, [allLancamentos, admin]);
+  }, [allLancamentos, membros, admin]);
 
   /* ─── produtividade (admin) ─── */
   const produtividadeData = useMemo(() => {
     if (!admin) return [];
-    return MOCK_USERS.filter(u => u.role === 'advogado' || u.role === 'admin').map(u => {
+    return membros.filter(u => u.role === 'advogado' || u.role === 'admin').map(u => {
       const procs = allProcessos.filter(p => p.responsible_id === u.id && p.status !== 'encerrado');
       const clientes = allClientes.filter(c => c.responsible_id === u.id);
       const now = new Date();
@@ -193,7 +194,7 @@ export default function RelatoriosPage() {
       const prazosSemana = allProcessos.filter(p => p.responsible_id === u.id && p.prazo_fatal && daysDiff(p.prazo_fatal) >= 0 && daysDiff(p.prazo_fatal) <= 7);
       return { user: u, processos: procs.length, clientes: clientes.length, audiencias: audiMes.length, prazos: prazosSemana.length };
     });
-  }, [allProcessos, allClientes, allEventos, admin]);
+  }, [allProcessos, allClientes, allEventos, membros, admin]);
 
   /* ─── financeiro mensal (admin) ─── */
   const financeiroMensal = useMemo(() => {
@@ -678,12 +679,12 @@ export default function RelatoriosPage() {
         <div className="text-center py-10 text-muted-foreground text-sm">Nenhuma atividade registrada</div>
       ) : (
         <div className="space-y-3">
-          {allAtividades.sort((a, b) => (b.data || '').localeCompare(a.data || '')).slice(0, 20).map(a => (
+          {allAtividades.slice(0, 20).map(a => (
             <div key={a.id} className="bg-card border border-border rounded-lg px-4 py-3 flex items-start gap-3">
               <Activity className="w-4 h-4 text-muted-foreground/80 mt-0.5 flex-shrink-0" />
               <div className="flex-1 min-w-0">
                 <div className="text-sm text-foreground">{a.descricao}</div>
-                <div className="text-xs text-muted-foreground mt-0.5">{formatDateBR(a.data)} · {a.usuario_nome}</div>
+                <div className="text-xs text-muted-foreground mt-0.5">{formatDateBR(a.created_at)} · {membros.find(m => m.id === a.usuario_id)?.name || 'Sistema'}</div>
               </div>
             </div>
           ))}

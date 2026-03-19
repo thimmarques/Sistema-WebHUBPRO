@@ -1,7 +1,7 @@
 import React from 'react';
 import { ArrowLeft } from 'lucide-react';
-import { getProcessos } from '@/data/mockProcessos';
-import { MOCK_USERS } from '@/data/mockUsers';
+import { useProcessos } from '@/hooks/useProcessos';
+import { useEquipe } from '@/hooks/useEquipe';
 import {
   statusLabels,
   statusColors,
@@ -28,11 +28,13 @@ function formatBRL(value: number): string {
 }
 
 export default function ProcessoDetail({ processoId, onBack }: ProcessoDetailProps) {
-  const processos = getProcessos();
+  const { processos } = useProcessos();
+  const { membros } = useEquipe();
+  
   const proc = processos.find((p) => p.id === processoId);
-  if (!proc) return <div className="text-muted-foreground">Processo não encontrado.</div>;
+  if (!proc) return <div className="text-muted-foreground p-8">Processo não encontrado.</div>;
 
-  const resp = MOCK_USERS.find((u) => u.id === proc.responsible_id);
+  const resp = membros.find((u) => u.id === proc.responsible_id);
 
   const valorDisplay =
     proc.valor_causa === 0 && proc.practice_area === 'criminal'

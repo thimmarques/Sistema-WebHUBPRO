@@ -28,10 +28,11 @@ import {
 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToastContext } from '@/contexts/ToastContext';
-import { MOCK_USERS } from '@/data/mockUsers';
-import { loadClientes, saveClientes } from '@/data/mockClientes';
-import { getProcessos, saveProcessos } from '@/data/mockProcessos';
-import { loadAtividades, saveAtividades, Atividade } from '@/data/mockAtividades';
+import { useClientes } from '@/hooks/useClientes';
+import { useProcessos } from '@/hooks/useProcessos';
+import { useEquipe } from '@/hooks/useEquipe';
+import { useAuditoria } from '@/hooks/useAuditoria';
+import { useEventos } from '@/hooks/useEventos';
 import {
   Cliente,
   getClienteName,
@@ -50,6 +51,7 @@ import {
   areaLabels,
   faseLabels,
 } from '@/types/processo';
+import { Atividade } from '@/types/atividade';
 import StatusBadge from './StatusBadge';
 import UserAvatar from './UserAvatar';
 import EmptyState from './EmptyState';
@@ -205,9 +207,11 @@ export default function ClienteDetailPage({ clientId, onBack, onNavigateProcesso
   const { currentUser } = useAuth();
   const { showToast } = useToastContext();
 
-  const [allClientes, setAllClientes] = useState<Cliente[]>(() => loadClientes());
-  const [allProcessos, setAllProcessos] = useState<Processo[]>(() => getProcessos());
-  const [allAtividades, setAllAtividades] = useState<Atividade[]>(() => loadAtividades());
+  const { clientes, loading: loadingClientes, saveCliente, deleteCliente } = useClientes();
+  const { processos, saveProcesso } = useProcessos();
+  const { atividades, logAtividade } = useAuditoria(clientId);
+  const { membros } = useEquipe();
+
   const [activeTab, setActiveTab] = useState<'resumo' | 'processos' | 'historico' | 'documentos' | 'eventos' | 'auditoria'>('resumo');
 
   // slide-over
@@ -223,16 +227,16 @@ export default function ClienteDetailPage({ clientId, onBack, onNavigateProcesso
   // dropdown
   const [openDropdown, setOpenDropdown] = useState<string | null>(null);
 
-  const cliente = allClientes.find((c) => c.id === clientId);
+  const cliente = useMemo(() => clientes.find((c) => c.id === clientId), [clientes, clientId]);
 
   const relatedProcessos = useMemo(
-    () => allProcessos.filter((p) => p.polo_ativo_id === clientId),
-    [allProcessos, clientId]
+    () => processos.filter((p) => p.polo_ativo_id === clientId),
+    [processos, clientId]
   );
 
   const relatedAtividades = useMemo(
-    () => allAtividades.filter((a) => a.client_id === clientId).sort((a, b) => new Date(b.data).getTime() - new Date(a.data).getTime()),
-    [allAtividades, clientId]
+    () => atividades.filter((a) => a.tabela === 'clientes' && a.registro_id === clientId),
+    [atividades, clientId]
   );
 
   // 404
@@ -255,7 +259,7 @@ export default function ClienteDetailPage({ clientId, onBack, onNavigateProcesso
   const polo = cliente.metadata?.polo || '';
   const city = address.includes('—') ? address.split('—').pop()?.trim() : '';
   const initials = name.split(' ').filter(Boolean).map((w) => w[0]).join('').toUpperCase().slice(0, 2);
-  const responsible = MOCK_USERS.find((u) => u.id === cliente.responsible_id);
+  const responsible = membros.find((u) => u.id === cliente.responsible_id);
 
   // KPIs
   const activeProcessCount = relatedProcessos.filter((p) => p.status !== 'encerrado').length;
@@ -273,50 +277,54 @@ export default function ClienteDetailPage({ clientId, onBack, onNavigateProcesso
   const prazoColor = prazoDiff <= 3 ? 'text-red-600' : prazoDiff <= 7 ? 'text-amber-600' : 'text-foreground';
 
   // handlers
-  const handleSaveCliente = (c: Cliente) => {
-    const updated = allClientes.map((x) => (x.id === c.id ? c : x));
-    setAllClientes(updated);
-    saveClientes(updated);
-    setSlideOpen(false);
-    showToast('Cliente atualizado com sucesso', 'success');
+  const handleSaveCliente = async (c: Cliente) => {
+    try {
+      await saveCliente(c);
+      setSlideOpen(false);
+      showToast('Cliente atualizado com sucesso', 'success');
+    } catch (error) {
+      console.error('Error saving client:', error);
+    }
   };
 
-  const handleDelete = () => {
-    const updated = allClientes.filter((c) => c.id !== clientId);
-    saveClientes(updated);
-    setDeleteConfirm(false);
-    showToast('Cliente excluído', 'info');
-    onBack();
+  const handleDelete = async () => {
+    try {
+      await deleteCliente(clientId);
+      setDeleteConfirm(false);
+      showToast('Cliente excluído', 'info');
+      onBack();
+    } catch (error) {
+      console.error('Error deleting client:', error);
+    }
   };
 
-  const handleSaveAnnotation = () => {
+  const handleSaveAnnotation = async () => {
     if (!annotationText.trim()) return;
-    const newAtv: Atividade = {
-      id: 'atv-' + Date.now(),
-      client_id: clientId,
-      processo_id: '',
-      responsible_id: currentUser!.id,
-      tipo: 'anotacao',
-      descricao: annotationText.trim(),
-      data: new Date().toISOString(),
-      usuario_nome: currentUser!.name,
-    };
-    const updated = [...allAtividades, newAtv];
-    setAllAtividades(updated);
-    saveAtividades(updated);
-    setAnnotationText('');
-    setAnnotationModal(false);
-    showToast('Anotação registrada', 'success');
+    try {
+      await logAtividade({
+        tipo: 'anotacao',
+        tabela: 'clientes',
+        registro_id: clientId,
+        descricao: annotationText.trim(),
+      });
+      setAnnotationText('');
+      setAnnotationModal(false);
+      showToast('Anotação registrada', 'success');
+    } catch (error) {
+      console.error('Error saving annotation:', error);
+    }
   };
 
-  const handleEncloseProcesso = (id: string) => {
-    const updated = allProcessos.map((p) =>
-      p.id === id ? { ...p, status: 'encerrado' as any } : p
-    );
-    setAllProcessos(updated);
-    saveProcessos(updated);
-    setOpenDropdown(null);
-    showToast('Processo encerrado', 'info');
+  const handleEncloseProcesso = async (id: string) => {
+    const proc = processos.find(p => p.id === id);
+    if (!proc) return;
+    try {
+      await saveProcesso({ ...proc, status: 'encerrado' });
+      setOpenDropdown(null);
+      showToast('Processo encerrado', 'info');
+    } catch (error) {
+      console.error('Error closing process:', error);
+    }
   };
 
   /* ── Prazo cell renderer ── */
@@ -365,7 +373,7 @@ export default function ClienteDetailPage({ clientId, onBack, onNavigateProcesso
               <p className="text-sm text-foreground/80 leading-snug">{atv.descricao}</p>
               <div className="flex items-center gap-2 mt-1">
                 <Clock className="w-3 h-3 text-muted-foreground/80" />
-                <span className="text-xs text-muted-foreground">{formatDateBR(atv.data)} às {formatTimeBR(atv.data)}</span>
+                <span className="text-xs text-muted-foreground">{formatDateBR(atv.created_at)} às {formatTimeBR(atv.created_at)}</span>
                 <span className="text-muted-foreground/80">·</span>
                 <span className="text-xs text-muted-foreground">{atv.usuario_nome}</span>
               </div>
@@ -624,7 +632,7 @@ export default function ClienteDetailPage({ clientId, onBack, onNavigateProcesso
   const filteredHistorico = useMemo(() => {
     let items = relatedAtividades;
     if (histTipoFilter) items = items.filter((a) => a.tipo === histTipoFilter);
-    if (histProcessoFilter) items = items.filter((a) => a.processo_id === histProcessoFilter);
+    if (histProcessoFilter) items = items.filter((a) => a.registro_id === histProcessoFilter);
     return items;
   }, [relatedAtividades, histTipoFilter, histProcessoFilter]);
 
@@ -890,17 +898,17 @@ export default function ClienteDetailPage({ clientId, onBack, onNavigateProcesso
 
         {/* ── DOCUMENTOS TAB ── */}
         {activeTab === 'documentos' && (
-          <ClienteDocumentosTab cliente={cliente} />
+          <ClienteDocumentosTab clientId={clientId} />
         )}
 
         {/* ── EVENTOS TAB ── */}
         {activeTab === 'eventos' && (
-          <ClienteEventosTab cliente={cliente} />
+          <ClienteEventosTab clientId={clientId} />
         )}
 
         {/* ── AUDITORIA TAB ── */}
         {activeTab === 'auditoria' && (
-          <ClienteAuditoriaTab cliente={cliente} />
+          <ClienteAuditoriaTab clientId={clientId} />
         )}
       </div>
 

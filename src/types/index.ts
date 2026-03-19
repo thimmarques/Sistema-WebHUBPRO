@@ -1,12 +1,13 @@
 export type PracticeArea = 'trabalhista' | 'civil' | 'criminal' | 'previdenciario' | 'tributario';
 
-export type UserRole = 'admin' | 'advogado' | 'assistente' | 'estagiario';
+export type UserRole = 'admin' | 'socio' | 'advogado' | 'assistente' | 'estagiario';
 
 export interface UserProfile {
   id: string;
   name: string;
   email: string;
   oab: string;
+  phone?: string;
   role: UserRole;
   practice_areas: PracticeArea[];
   avatar_color: string;

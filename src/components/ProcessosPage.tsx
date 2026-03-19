@@ -18,11 +18,11 @@ import {
   ChevronRight,
   X,
   Info,
+  Loader2,
 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToastContext } from '@/contexts/ToastContext';
-import { MOCK_USERS } from '@/data/mockUsers';
-import { getProcessos, saveProcessos } from '@/data/mockProcessos';
+import { useProcessos, useClientes, useEquipe } from '@/hooks';
 import {
   Processo,
   ProcessoStatus,
@@ -38,16 +38,8 @@ import {
 } from '@/types/processo';
 import EmptyState from './EmptyState';
 import UserAvatar from './UserAvatar';
+import StatusBadge from './StatusBadge';
 
-/* ─── helpers ─── */
-
-function filterByUser<T extends { responsible_id: string }>(
-  items: T[],
-  userId: string,
-  isAdmin: boolean
-): T[] {
-  return isAdmin ? items : items.filter((i) => i.responsible_id === userId);
-}
 
 function formatDateBR(dateStr: string): string {
   if (!dateStr) return '';
@@ -113,7 +105,9 @@ export default function ProcessosPage({ onNavigateDetail }: ProcessosPageProps) 
   const { showToast } = useToastContext();
   const admin = isAdmin();
 
-  const [allProcessos, setAllProcessos] = useState<Processo[]>(() => getProcessos());
+  const { processos: allProcessos, loading: loadingProcessos, saveProcesso, deleteProcesso } = useProcessos();
+  const { membros } = useEquipe();
+
   const [search, setSearch] = useState('');
   const [filterArea, setFilterArea] = useState('');
   const [filterStatus, setFilterStatus] = useState('');
@@ -128,22 +122,21 @@ export default function ProcessosPage({ onNavigateDetail }: ProcessosPageProps) 
 
   /* ─── filtering ─── */
   const filtered = useMemo(() => {
-    let items = filterByUser(allProcessos, currentUser!.id, admin);
+    let items = allProcessos;
 
     if (search) {
       const s = search.toLowerCase();
       items = items.filter(
         (p) =>
           (p.numero_cnj || '').toLowerCase().includes(s) ||
-          (p.polo_ativo?.nome || '').toLowerCase().includes(s)
+          (p.polo_ativo_nome || '').toLowerCase().includes(s) ||
+          (p.polo_passivo_nome || '').toLowerCase().includes(s)
       );
     }
     if (filterArea) items = items.filter((p) => p.practice_area === filterArea);
     if (filterStatus) items = items.filter((p) => p.status === filterStatus);
     if (filterTribunal) items = items.filter((p) => p.tribunal === filterTribunal);
     if (filterPrazo) {
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
       items = items.filter((p) => {
         if (!p.prazo_fatal) return false;
         const diff = daysDiff(p.prazo_fatal);
@@ -157,8 +150,8 @@ export default function ProcessosPage({ onNavigateDetail }: ProcessosPageProps) 
 
     // sort
     items = [...items].sort((a, b) => {
-      let va: any = sortField === 'polo_ativo' ? (a.polo_ativo?.nome || '') : (a[sortField] ?? '');
-      let vb: any = sortField === 'polo_ativo' ? (b.polo_ativo?.nome || '') : (b[sortField] ?? '');
+      let va: any = sortField === 'polo_ativo' ? (a.polo_ativo_nome || '') : (a[sortField] ?? '');
+      let vb: any = sortField === 'polo_ativo' ? (b.polo_ativo_nome || '') : (b[sortField] ?? '');
       if (typeof va === 'string') va = va.toLowerCase();
       if (typeof vb === 'string') vb = vb.toLowerCase();
       if (va < vb) return sortDir === 'asc' ? -1 : 1;
@@ -167,7 +160,7 @@ export default function ProcessosPage({ onNavigateDetail }: ProcessosPageProps) 
     });
 
     return items;
-  }, [allProcessos, currentUser, admin, search, filterArea, filterStatus, filterTribunal, filterPrazo, sortField, sortDir]);
+  }, [allProcessos, search, filterArea, filterStatus, filterTribunal, filterPrazo, sortField, sortDir]);
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / PER_PAGE));
   const pageItems = filtered.slice((page - 1) * PER_PAGE, page * PER_PAGE);
@@ -178,7 +171,7 @@ export default function ProcessosPage({ onNavigateDetail }: ProcessosPageProps) 
   const statsTotal = filtered.length;
   const statsAudiencias = filtered.filter((p) => p.proxima_audiencia).length;
   const statsPrazos = filtered.filter((p) => isWithinDays(p.prazo_fatal, 7)).length;
-  const statsValor = filtered.reduce((s, p) => s + p.valor_causa, 0);
+  const statsValor = filtered.reduce((s, p) => s + (p.valor_causa || 0), 0);
 
   const toggleSort = (field: SortField) => {
     if (sortField === field) setSortDir(sortDir === 'asc' ? 'desc' : 'asc');
@@ -190,32 +183,39 @@ export default function ProcessosPage({ onNavigateDetail }: ProcessosPageProps) 
     return sortDir === 'asc' ? <ChevronUp className="w-3 h-3 ml-1 inline" /> : <ChevronDown className="w-3 h-3 ml-1 inline" />;
   };
 
-  const getUserById = (id: string) => MOCK_USERS.find((u) => u.id === id);
+  const getMembroById = (id: string) => membros.find((u) => u.id === id);
 
-  const handleDelete = (id: string) => {
-    const updated = allProcessos.filter((p) => p.id !== id);
-    setAllProcessos(updated);
-    saveProcessos(updated);
-    setDeleteConfirm(null);
-    showToast('Processo excluído com sucesso', 'success');
+  const handleDelete = async (id: string) => {
+    try {
+      await deleteProcesso(id);
+      setDeleteConfirm(null);
+      showToast('Processo excluído com sucesso', 'success');
+    } catch (err) {
+      showToast('Erro ao excluir processo', 'error');
+    }
   };
 
-  const handleEnclose = (id: string) => {
-    const updated = allProcessos.map((p) =>
-      p.id === id ? { ...p, status: 'encerrado' as ProcessoStatus } : p
-    );
-    setAllProcessos(updated);
-    saveProcessos(updated);
-    setOpenDropdown(null);
-    showToast('Processo encerrado', 'info');
+  const handleEnclose = async (id: string) => {
+    try {
+      const proc = allProcessos.find(p => p.id === id);
+      if (proc) {
+        await saveProcesso({ ...proc, status: 'encerrado' });
+      }
+      setOpenDropdown(null);
+      showToast('Processo encerrado', 'info');
+    } catch (err) {
+      showToast('Erro ao encerrar processo', 'error');
+    }
   };
 
-  const handleSaveNew = (proc: Processo) => {
-    const updated = [...allProcessos, proc];
-    setAllProcessos(updated);
-    saveProcessos(updated);
-    setModalOpen(false);
-    showToast('Processo cadastrado com sucesso', 'success');
+  const handleSaveNew = async (proc: Processo) => {
+    try {
+      await saveProcesso(proc);
+      setModalOpen(false);
+      showToast('Processo cadastrado com sucesso', 'success');
+    } catch (err) {
+      showToast('Erro ao salvar processo', 'error');
+    }
   };
 
   /* ─── prazo cell ─── */
@@ -340,7 +340,9 @@ export default function ProcessosPage({ onNavigateDetail }: ProcessosPageProps) 
       </div>
 
       {/* Table or Empty */}
-      {filtered.length === 0 ? (
+      {loadingProcessos ? (
+        <div className="flex justify-center py-24"><Loader2 className="w-8 h-8 animate-spin text-primary" /></div>
+      ) : filtered.length === 0 ? (
         <EmptyState
           icon={Briefcase}
           title="Nenhum processo encontrado"
@@ -351,7 +353,7 @@ export default function ProcessosPage({ onNavigateDetail }: ProcessosPageProps) 
       ) : (
         <div className="bg-card border border-border rounded-lg shadow-sm overflow-hidden">
           <div className="overflow-x-auto">
-            <table className="w-full">
+            <table className="w-full text-left">
               <thead>
                 <tr className="bg-muted/50 border-b border-border">
                   <th className="text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider px-4 py-3 cursor-pointer select-none min-w-[13rem]" onClick={() => toggleSort('numero_cnj')}>
@@ -385,28 +387,25 @@ export default function ProcessosPage({ onNavigateDetail }: ProcessosPageProps) 
               </thead>
               <tbody>
                 {pageItems.map((proc) => {
-                  const resp = getUserById(proc.responsible_id);
+                  const resp = getMembroById(proc.responsible_id);
                   return (
                     <tr key={proc.id} className="hover:bg-muted/50 transition-colors border-b border-border/50 last:border-0">
                       <td className="px-4 py-3.5 min-w-[13rem]">
                         <div className="font-mono text-xs font-semibold text-foreground tracking-tight">{proc.numero_cnj || '—'}</div>
-                        <div className="text-xs text-muted-foreground mt-0.5 truncate max-w-xs">{''}</div>
+                        <div className="text-xs text-muted-foreground mt-0.5 truncate max-w-xs">{proc.polo_passivo_nome}</div>
                       </td>
                       <td className="px-4 py-3.5">
                         <div className="flex items-center gap-2">
-                          <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-medium shrink-0 ${resp?.avatar_color || 'bg-muted'} text-white`}>
-                            {(proc.polo_ativo?.nome || 'Desconhecido').split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase()}
+                          <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-medium shrink-0 bg-primary/20 text-primary uppercase`}>
+                            {(proc.polo_ativo_nome || 'D').charAt(0)}
                           </div>
                           <div className="min-w-0">
-                            <div className="text-sm text-foreground truncate">{proc.polo_ativo?.nome || 'Desconhecido'}</div>
-                            <div className="text-xs text-muted-foreground truncate max-w-[9rem]">{''}</div>
+                            <div className="text-sm text-foreground truncate">{proc.polo_ativo_nome}</div>
                           </div>
                         </div>
                       </td>
                       <td className="px-4 py-3.5">
-                        <span className={`${areaColors[proc.practice_area]} text-xs font-medium px-2 py-0.5 rounded-full`}>
-                          {areaLabels[proc.practice_area]}
-                        </span>
+                        <StatusBadge variant={proc.practice_area} />
                       </td>
                       <td className="px-4 py-3.5">
                         <span className="bg-muted text-muted-foreground text-xs font-medium px-2 py-0.5 rounded-md">{proc.tribunal}</span>
@@ -433,7 +432,7 @@ export default function ProcessosPage({ onNavigateDetail }: ProcessosPageProps) 
                         <div className="relative">
                           <button
                             onClick={() => setOpenDropdown(openDropdown === proc.id ? null : proc.id)}
-                            className="text-muted-foreground hover:text-foreground p-1 rounded"
+                            className="text-muted-foreground hover:text-foreground p-1 rounded transition-colors"
                           >
                             <MoreHorizontal className="w-4 h-4" />
                           </button>
@@ -539,6 +538,9 @@ function DropdownMenu({ onClose, onView, onEdit, onAudiencia, onEnclose, onDelet
 function NovoProcessoModal({ onClose, onSave, admin, currentUserId }: {
   onClose: () => void; onSave: (p: Processo) => void; admin: boolean; currentUserId: string;
 }) {
+  const { clientes, loading: loadingClientes } = useClientes();
+  const { membros } = useEquipe();
+
   const [form, setForm] = useState<Record<string, any>>({
     practice_area: '',
     acao: '',
@@ -554,7 +556,7 @@ function NovoProcessoModal({ onClose, onSave, admin, currentUserId }: {
     prazo_fatal: '',
     responsible_id: admin ? '' : currentUserId,
     notes: '',
-    polo_ativo_id: '',
+    cliente_id: '',
     polo_ativo_nome: '',
   });
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -562,24 +564,16 @@ function NovoProcessoModal({ onClose, onSave, admin, currentUserId }: {
   const [clientDropdownOpen, setClientDropdownOpen] = useState(false);
   const [acaoFocus, setAcaoFocus] = useState(false);
 
-  // load clients
-  const clients = useMemo(() => {
-    const stored = localStorage.getItem('whp_clientes');
-    if (!stored) return [];
-    const all = JSON.parse(stored);
-    return admin ? all : all.filter((c: any) => c.responsible_id === currentUserId);
-  }, [admin, currentUserId]);
-
   const filteredClients = useMemo(() => {
-    if (!clientSearch) return clients;
+    if (!clientSearch) return clientes;
     const s = clientSearch.toLowerCase();
-    return clients.filter((c: any) => {
+    return clientes.filter((c: any) => {
       const name = c.nome || c.razao_social || '';
       return name.toLowerCase().includes(s);
     });
-  }, [clients, clientSearch]);
+  }, [clientes, clientSearch]);
 
-  const selectedClient = form.polo_ativo_id ? clients.find((c: any) => c.id === form.polo_ativo_id) : null;
+  const selectedClient = form.cliente_id ? clientes.find((c: any) => c.id === form.cliente_id) : null;
 
   const set = (field: string, value: any) => {
     setForm((prev) => ({ ...prev, [field]: value }));
@@ -600,7 +594,7 @@ function NovoProcessoModal({ onClose, onSave, admin, currentUserId }: {
 
   const validate = (): boolean => {
     const errs: Record<string, string> = {};
-    if (!form.polo_ativo_id) errs.polo_ativo_id = 'Selecione um cliente';
+    if (!form.cliente_id) errs.cliente_id = 'Selecione um cliente';
     if (!form.practice_area) errs.practice_area = 'Selecione a área';
     if (!form.acao) errs.acao = 'Informe o tipo de ação';
     if (!form.tribunal) errs.tribunal = 'Selecione o tribunal';
@@ -616,49 +610,42 @@ function NovoProcessoModal({ onClose, onSave, admin, currentUserId }: {
 
   const handleSave = () => {
     if (!validate()) return;
-    const proc: Processo = {
-      id: 'proc-' + Date.now(),
+    const proc: any = {
       numero_cnj: form.numero_cnj,
-      practice_area: form.practice_area as any,
-      polo_ativo_id: form.polo_ativo_id,
-      polo_ativo: {
-        nome: form.polo_ativo_nome,
-        practice_area: form.practice_area,
-      },
+      practice_area: form.practice_area,
+      cliente_id: form.cliente_id,
+      polo_ativo_nome: form.polo_ativo_nome,
+      polo_passivo_nome: form.polo_passivo_nome,
       responsible_id: form.responsible_id,
-      status: form.status as any,
+      status: form.status,
       tribunal: form.tribunal,
       vara: form.vara,
       comarca: form.comarca,
-      fase: form.fase as any,
+      fase: form.fase,
       valor_causa: parseBRL(form.valor_causa_str || '0'),
-      proxima_audiencia: form.proxima_audiencia,
-      prazo_fatal: form.prazo_fatal,
-      created_at: new Date().toISOString(),
-      created_by: currentUserId,
+      proxima_audiencia: form.proxima_audiencia || null,
+      prazo_fatal: form.prazo_fatal || null,
       notes: form.notes,
     };
     onSave(proc);
   };
 
   const inputClass = (field?: string) =>
-    `w-full bg-card border ${field && errors[field] ? 'border-red-300' : 'border-border'} rounded-md px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent`;
+    `w-full bg-card border ${field && errors[field] ? 'border-red-300' : 'border-border'} rounded-md px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent transition-all`;
 
   const labelClass = 'text-sm font-medium text-foreground mb-1 block';
 
-  const prazoDiff = form.prazo_fatal ? daysDiff(form.prazo_fatal) : null;
-
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <div className="fixed inset-0 bg-black/20 backdrop-blur-sm" onClick={onClose} />
-      <div className="bg-card rounded-xl shadow-xl w-full max-w-2xl max-h-[90vh] flex flex-col mx-4 relative z-10">
+      <div className="bg-card rounded-xl shadow-xl w-full max-w-2xl max-h-[90vh] flex flex-col relative z-10 transition-all">
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-border flex-shrink-0">
           <div className="flex items-center gap-2">
-            <Briefcase className="w-5 h-5 text-accent" />
+            <Briefcase className="w-5 h-5 text-primary" />
             <h2 className="text-lg font-semibold text-foreground">Novo Processo</h2>
           </div>
-          <button onClick={onClose} className="text-muted-foreground hover:text-foreground"><X className="w-5 h-5" /></button>
+          <button onClick={onClose} className="text-muted-foreground hover:text-foreground transition-colors"><X className="w-5 h-5" /></button>
         </div>
 
         {/* Body */}
@@ -669,14 +656,11 @@ function NovoProcessoModal({ onClose, onSave, admin, currentUserId }: {
               <label className={labelClass}>Cliente <span className="text-red-500">*</span></label>
               {selectedClient ? (
                 <div className="bg-primary/10 border border-primary/30 rounded-md px-3 py-1.5 flex items-center gap-2">
-                  <div className="w-5 h-5 rounded-full bg-primary text-white text-xs flex items-center justify-center font-medium">
-                    {(selectedClient.nome || selectedClient.razao_social || '')[0]?.toUpperCase()}
+                  <div className="w-5 h-5 rounded-full bg-primary text-white text-xs flex items-center justify-center font-medium uppercase">
+                    {(selectedClient.nome || selectedClient.razao_social || 'C')[0]}
                   </div>
-                  <span className="text-sm text-foreground">{selectedClient.nome || selectedClient.razao_social}</span>
-                  <span className={`${areaColors[selectedClient.practice_area]} text-xs px-1.5 py-0.5 rounded-full`}>
-                    {areaLabels[selectedClient.practice_area]}
-                  </span>
-                  <button onClick={() => { set('polo_ativo_id', ''); set('polo_ativo_nome', ''); }} className="ml-auto text-muted-foreground hover:text-secondary-foreground">
+                  <span className="text-sm text-foreground font-medium">{selectedClient.nome || selectedClient.razao_social}</span>
+                  <button onClick={() => { set('cliente_id', ''); set('polo_ativo_nome', ''); }} className="ml-auto text-muted-foreground hover:text-foreground">
                     <X className="w-3 h-3" />
                   </button>
                 </div>
@@ -688,36 +672,37 @@ function NovoProcessoModal({ onClose, onSave, admin, currentUserId }: {
                     onChange={(e) => { setClientSearch(e.target.value); setClientDropdownOpen(true); }}
                     onFocus={() => setClientDropdownOpen(true)}
                     placeholder="Buscar cliente por nome..."
-                    className={`${inputClass('polo_ativo_id')} pl-9`}
+                    className={`${inputClass('cliente_id')} pl-9`}
+                    disabled={loadingClientes}
                   />
                   {clientDropdownOpen && filteredClients.length > 0 && (
-                    <div className="absolute left-0 right-0 top-full mt-1 bg-card border border-border rounded-lg shadow-md max-h-48 overflow-y-auto z-10">
+                    <div className="absolute left-0 right-0 top-full mt-1 bg-card border border-border rounded-lg shadow-md max-h-48 overflow-y-auto z-50">
                       {filteredClients.map((c: any) => (
                         <button
                           key={c.id}
-                          className="flex items-center gap-2 w-full px-3 py-2 hover:bg-muted text-left"
+                          className="flex items-center gap-2 w-full px-3 py-2 hover:bg-muted text-left transition-colors"
                           onClick={() => {
-                            set('polo_ativo_id', c.id);
+                            set('cliente_id', c.id);
                             set('polo_ativo_nome', c.nome || c.razao_social);
                             setClientSearch('');
                             setClientDropdownOpen(false);
+                            if (c.practice_area) handleAreaChange(c.practice_area);
                           }}
                         >
-                          <div className="w-6 h-6 rounded-full bg-secondary text-secondary-foreground text-xs flex items-center justify-center font-medium">
-                            {(c.nome || c.razao_social || '')[0]?.toUpperCase()}
+                          <div className="w-6 h-6 rounded-full bg-secondary text-secondary-foreground text-xs flex items-center justify-center font-medium uppercase">
+                            {(c.nome || c.razao_social || 'C')[0]}
                           </div>
-                          <span className="text-sm text-foreground">{c.nome || c.razao_social}</span>
-                          <span className={`${areaColors[c.practice_area]} text-xs px-1.5 py-0.5 rounded-full ml-auto`}>
-                            {areaLabels[c.practice_area]}
-                          </span>
-                          <span className="bg-muted/80 text-secondary-foreground text-xs px-1.5 py-0.5 rounded-full">{c.type}</span>
+                          <div>
+                            <div className="text-sm font-medium text-foreground">{c.nome || c.razao_social}</div>
+                            <div className="text-[10px] text-muted-foreground uppercase">{c.type}</div>
+                          </div>
                         </button>
                       ))}
                     </div>
                   )}
                 </div>
               )}
-              {errors.polo_ativo_id && <p className="text-xs text-red-500 mt-1">{errors.polo_ativo_id}</p>}
+              {errors.cliente_id && <p className="text-xs text-red-500 mt-1">{errors.cliente_id}</p>}
             </div>
 
             {/* Area */}
@@ -726,18 +711,15 @@ function NovoProcessoModal({ onClose, onSave, admin, currentUserId }: {
               <div className="flex gap-2 flex-wrap">
                 {(['trabalhista', 'civil', 'criminal', 'previdenciario'] as const).map((area) => {
                   const selected = form.practice_area === area;
-                  const colors: Record<string, string> = {
-                    trabalhista: 'bg-primary border-primary text-white',
-                    civil: 'bg-purple-600 border-purple-600 text-white',
-                    criminal: 'bg-red-600 border-red-600 text-white',
-                    previdenciario: 'bg-green-600 border-green-600 text-white',
-                  };
                   return (
                     <button
                       key={area}
+                      type="button"
                       onClick={() => handleAreaChange(area)}
-                      className={`border rounded-md px-4 py-2 text-sm transition-colors ${
-                        selected ? colors[area] : 'bg-card border-border text-secondary-foreground hover:border-border'
+                      className={`border rounded-md px-4 py-2 text-sm transition-all ${
+                        selected 
+                          ? 'bg-primary border-primary text-primary-foreground font-medium' 
+                          : 'bg-card border-border text-muted-foreground hover:border-primary/50 hover:text-foreground'
                       }`}
                     >
                       {areaLabels[area]}
@@ -756,13 +738,13 @@ function NovoProcessoModal({ onClose, onSave, admin, currentUserId }: {
                 onChange={(e) => set('acao', e.target.value)}
                 onFocus={() => setAcaoFocus(true)}
                 onBlur={() => setTimeout(() => setAcaoFocus(false), 200)}
-                placeholder="Tipo de ação..."
+                placeholder="Ex: Reclamação Trabalhista, Divórcio, etc."
                 className={inputClass('acao')}
               />
               {acaoFocus && acaoSugs.length > 0 && (
-                <div className="absolute left-0 right-0 top-full mt-1 bg-card border border-border rounded-lg shadow-md max-h-40 overflow-y-auto z-10">
+                <div className="absolute left-0 right-0 top-full mt-1 bg-card border border-border rounded-lg shadow-md max-h-40 overflow-y-auto z-50">
                   {acaoSugs.map((s) => (
-                    <button key={s} className="w-full text-left px-3 py-2 text-sm text-foreground/80 hover:bg-muted" onMouseDown={() => set('acao', s)}>
+                    <button key={s} type="button" className="w-full text-left px-3 py-2 text-sm text-foreground/80 hover:bg-muted" onMouseDown={() => set('acao', s)}>
                       {s}
                     </button>
                   ))}
@@ -780,7 +762,7 @@ function NovoProcessoModal({ onClose, onSave, admin, currentUserId }: {
                 placeholder="0000000-00.0000.0.00.0000"
                 className={`${inputClass()} font-mono`}
               />
-              <p className="text-xs text-muted-foreground mt-1">Deixe em branco se ainda não distribuído</p>
+              <p className="text-[10px] text-muted-foreground mt-1 uppercase tracking-wider">Deixe em branco se ainda não distribuído</p>
             </div>
 
             {/* Tribunal & Vara */}
@@ -796,36 +778,19 @@ function NovoProcessoModal({ onClose, onSave, admin, currentUserId }: {
             </div>
             <div>
               <label className={labelClass}>Vara <span className="text-red-500">*</span></label>
-              <input value={form.vara} onChange={(e) => set('vara', e.target.value)} placeholder="Ex: 3ª Vara do Trabalho de SP" className={inputClass('vara')} />
+              <input value={form.vara} onChange={(e) => set('vara', e.target.value)} placeholder="Ex: 3ª Vara do Trabalho" className={inputClass('vara')} />
               {errors.vara && <p className="text-xs text-red-500 mt-1">{errors.vara}</p>}
             </div>
 
-            {/* Comarca & Valor */}
+            {/* Comarca & Polo Passivo */}
             <div>
               <label className={labelClass}>Comarca <span className="text-red-500">*</span></label>
-              <input value={form.comarca} onChange={(e) => set('comarca', e.target.value)} placeholder="Ex: São Paulo" className={inputClass('comarca')} />
+              <input value={form.comarca} onChange={(e) => set('comarca', e.target.value)} placeholder="Ex: São Paulo - SP" className={inputClass('comarca')} />
               {errors.comarca && <p className="text-xs text-red-500 mt-1">{errors.comarca}</p>}
             </div>
             <div>
-              <label className={labelClass}>Valor da Causa</label>
-              <input
-                value={form.valor_causa_str}
-                onChange={(e) => set('valor_causa_str', e.target.value)}
-                onBlur={() => {
-                  const v = parseBRL(form.valor_causa_str || '0');
-                  if (v > 0) set('valor_causa_str', formatBRL(v));
-                }}
-                placeholder="R$ 0,00"
-                className={inputClass()}
-              />
-              <p className="text-xs text-muted-foreground mt-1">Informe 0 para ações sem valor de causa (criminal/previdenciário)</p>
-            </div>
-
-            {/* Polo Passivo */}
-            <div className="col-span-2">
               <label className={labelClass}>Polo Passivo <span className="text-red-500">*</span></label>
-              <input value={form.polo_passivo_nome} onChange={(e) => set('polo_passivo_nome', e.target.value)} placeholder="Nome da parte contrária..." className={inputClass('polo_passivo_nome')} />
-              <p className="text-xs text-muted-foreground mt-1">Empresa, pessoa ou órgão contra quem a ação é movida</p>
+              <input value={form.polo_passivo_nome} onChange={(e) => set('polo_passivo_nome', e.target.value)} placeholder="Ex: Empresa X Ltda" className={inputClass('polo_passivo_nome')} />
               {errors.polo_passivo_nome && <p className="text-xs text-red-500 mt-1">{errors.polo_passivo_nome}</p>}
             </div>
 
@@ -833,8 +798,8 @@ function NovoProcessoModal({ onClose, onSave, admin, currentUserId }: {
             <div>
               <label className={labelClass}>Fase Atual <span className="text-red-500">*</span></label>
               <select value={form.fase} onChange={(e) => set('fase', e.target.value)} className={inputClass('fase')}>
-                {(Object.entries(faseLabels) as [FaseType, string][]).map(([k, v]) => (
-                  <option key={k} value={k}>{v}</option>
+                {Object.entries(faseLabels).map(([val, label]) => (
+                  <option key={val} value={val}>{label}</option>
                 ))}
               </select>
               {errors.fase && <p className="text-xs text-red-500 mt-1">{errors.fase}</p>}
@@ -842,72 +807,73 @@ function NovoProcessoModal({ onClose, onSave, admin, currentUserId }: {
             <div>
               <label className={labelClass}>Status <span className="text-red-500">*</span></label>
               <select value={form.status} onChange={(e) => set('status', e.target.value)} className={inputClass('status')}>
-                {(Object.entries(statusLabels) as [ProcessoStatus, string][]).map(([k, v]) => (
-                  <option key={k} value={k}>{v}</option>
+                {Object.entries(statusLabels).map(([val, label]) => (
+                  <option key={val} value={val}>{label}</option>
                 ))}
               </select>
               {errors.status && <p className="text-xs text-red-500 mt-1">{errors.status}</p>}
             </div>
 
-            {/* Audiencia & Prazo */}
+            {/* Valor da Causa */}
+            <div>
+              <label className={labelClass}>Valor da Causa</label>
+              <input
+                value={form.valor_causa_str}
+                onChange={(e) => set('valor_causa_str', e.target.value)}
+                placeholder="R$ 0,00"
+                className={inputClass()}
+              />
+            </div>
+
+            {/* Responsável */}
+            <div>
+              <label className={labelClass}>Responsável <span className="text-red-500">*</span></label>
+              <select
+                value={form.responsible_id}
+                onChange={(e) => set('responsible_id', e.target.value)}
+                disabled={!admin}
+                className={inputClass('responsible_id')}
+              >
+                <option value="">Selecione</option>
+                {membros.map((u) => (
+                  <option key={u.id} value={u.id}>{u.name}</option>
+                ))}
+              </select>
+              {errors.responsible_id && <p className="text-xs text-red-500 mt-1">{errors.responsible_id}</p>}
+            </div>
+
+            {/* Prazos */}
             <div>
               <label className={labelClass}>Próxima Audiência</label>
               <input type="datetime-local" value={form.proxima_audiencia} onChange={(e) => set('proxima_audiencia', e.target.value)} className={inputClass()} />
-              <p className="text-xs text-muted-foreground mt-1">Opcional</p>
             </div>
             <div>
               <label className={labelClass}>Prazo Fatal</label>
               <input type="date" value={form.prazo_fatal} onChange={(e) => set('prazo_fatal', e.target.value)} className={inputClass()} />
-              {prazoDiff !== null && prazoDiff <= 7 && prazoDiff > 0 && (
-                <div className="flex items-center gap-1 mt-1">
-                  <AlertTriangle className="w-3 h-3 text-amber-500" />
-                  <span className="text-xs text-amber-600">Prazo próximo — verifique os prazos processuais</span>
-                </div>
-              )}
-              {prazoDiff !== null && prazoDiff <= 0 && (
-                <div className="flex items-center gap-1 mt-1">
-                  <AlertTriangle className="w-3 h-3 text-red-500" />
-                  <span className="text-xs text-red-600">Prazo já vencido</span>
-                </div>
-              )}
             </div>
 
-            {/* Responsavel */}
+            {/* Observações */}
             <div className="col-span-2">
-              <label className={labelClass}>Responsável <span className="text-red-500">*</span></label>
-              {admin ? (
-                <select value={form.responsible_id} onChange={(e) => set('responsible_id', e.target.value)} className={inputClass('responsible_id')}>
-                  <option value="">Selecione</option>
-                  {MOCK_USERS.map((u) => (
-                    <option key={u.id} value={u.id}>{u.name} — {u.role}</option>
-                  ))}
-                </select>
-              ) : (
-                <div className="bg-muted cursor-not-allowed border border-border rounded-md px-3 py-2 text-sm text-muted-foreground">
-                  {MOCK_USERS.find((u) => u.id === currentUserId)?.name}
-                </div>
-              )}
-              {errors.responsible_id && <p className="text-xs text-red-500 mt-1">{errors.responsible_id}</p>}
-            </div>
-
-            {/* Notes */}
-            <div className="col-span-2">
-              <label className={labelClass}>Observações</label>
-              <textarea rows={3} value={form.notes} onChange={(e) => set('notes', e.target.value)} placeholder="Anotações internas sobre este processo..." className={inputClass()} />
+              <label className={labelClass}>Observações Internas</label>
+              <textarea
+                value={form.notes}
+                onChange={(e) => set('notes', e.target.value)}
+                rows={3}
+                placeholder="Observações importantes sobre o processo..."
+                className={inputClass()}
+              />
             </div>
           </div>
         </div>
 
         {/* Footer */}
-        <div className="border-t border-border px-6 py-4 flex items-center justify-between flex-shrink-0 bg-card rounded-b-xl">
-          <div className="flex items-center gap-1.5">
-            <Info className="w-4 h-4 text-muted-foreground" />
-            <span className="text-xs text-muted-foreground">Campos marcados com * são obrigatórios</span>
-          </div>
-          <div className="flex gap-3">
-            <button onClick={onClose} className="text-sm text-secondary-foreground px-4 py-2 hover:text-foreground">Cancelar</button>
-            <button onClick={handleSave} className="bg-primary text-white rounded-md px-6 py-2 text-sm font-medium hover:bg-primary/90 transition-colors">Salvar Processo</button>
-          </div>
+        <div className="px-6 py-4 border-t border-border flex justify-end gap-3 flex-shrink-0">
+          <button onClick={onClose} className="px-4 py-2 text-sm text-foreground hover:bg-muted rounded-md transition-colors">
+            Cancelar
+          </button>
+          <button onClick={handleSave} className="px-6 py-2 bg-primary hover:bg-primary/90 text-primary-foreground text-sm font-medium rounded-md transition-all">
+            Cadastrar Processo
+          </button>
         </div>
       </div>
     </div>

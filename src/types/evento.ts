@@ -27,6 +27,11 @@ export interface Evento {
   deleted_at?: string | null;
   audiencia_tipo?: AudienciaTipo;
   audiencia_status?: AudienciaStatus;
+  processo_numero?: string;
+  processo?: {
+    numero_processo?: string;
+    polo_ativo_id?: string;
+  };
 }
 
 export const tipoLabels: Record<EventoTipo, string> = {

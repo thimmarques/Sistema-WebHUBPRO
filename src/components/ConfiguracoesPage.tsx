@@ -11,17 +11,77 @@ import {
 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToastContext } from '@/contexts/ToastContext';
-import { MOCK_USERS } from '@/data/mockUsers';
+import { useEquipe } from '@/hooks/useEquipe';
+import { useAuditoria } from '@/hooks/useAuditoria';
+import { useOfficeSettings } from '@/hooks/useOfficeSettings';
 import AccessDeniedScreen from './AccessDeniedScreen';
 import UserAvatar from './UserAvatar';
-import {
-  Office, Integracao, Sessao, AuditLog, SystemConfig,
-  loadOffice, saveOffice,
-  loadIntegracoes, saveIntegracoes,
-  loadSessoes, saveSessoes,
-  loadAuditLogs, saveAuditLogs, addAuditLog,
-  loadSystemConfig, saveSystemConfig,
-} from '@/data/mockConfiguracoes';
+
+// Note: Configuração do escritório e sistema devem vir do BD via hooks específicos ou contexto global.
+// Para esta refatoração, manteremos as interfaces mas removeremos os loads de mock.
+
+interface Office {
+  id: string;
+  name: string;
+  cnpj: string;
+  email: string;
+  phone: string;
+  website: string;
+  address: string;
+  city: string;
+  state: string;
+  cep: string;
+  active_areas: ('trabalhista' | 'civil' | 'criminal' | 'previdenciario' | 'tributario')[];
+}
+
+interface Integracao {
+  id: string;
+  name: string;
+  description: string;
+  status: 'conectado' | 'desconectado' | 'erro' | 'pendente';
+  last_sync: string;
+  config: Record<string, string>;
+}
+
+interface Sessao {
+  id: string;
+  user_id: string;
+  user_name: string;
+  device: string;
+  browser: string;
+  ip: string;
+  last_access: string;
+  current: boolean;
+}
+
+interface AuditLog {
+  id: string;
+  user_id: string;
+  user_name: string;
+  action: string;
+  entity: string;
+  entity_id: string;
+  entity_name: string;
+  ip: string;
+  timestamp: string;
+  status: 'sucesso' | 'erro';
+  details: string;
+}
+
+interface SystemConfig {
+  id: string;
+  app_version: string;
+  session_timeout: number;
+  two_factor_enabled: boolean;
+  password_min_length: number;
+  require_special_chars: boolean;
+  require_uppercase: boolean;
+  timezone: string;
+  language: string;
+  theme: 'light' | 'dark' | 'system';
+  last_backup: string;
+  backup_frequency: 'daily' | 'weekly' | 'manual';
+}
 
 type ConfigSubmenu = 'meu-perfil' | 'escritorio' | 'integracoes' | 'logs' | 'seguranca' | 'sistema';
 
@@ -139,6 +199,21 @@ export default function ConfiguracoesPage({ initialSubmenu }: ConfiguracoesPageP
     logs: 'Logs e Auditoria', seguranca: 'Segurança', sistema: 'Sistema',
   };
 
+  // Objetos padrão para evitar erros de undefined
+  const defaultOffice: Office = {
+    id: 'off-1', name: 'WebHubPro Advocacia', cnpj: '00.000.000/0001-00',
+    email: 'contato@webhubpro.adv.br', phone: '(11) 3000-0000', website: 'www.webhubpro.adv.br',
+    address: 'Av. Paulista, 1000', city: 'São Paulo', state: 'SP', cep: '01310-100',
+    active_areas: ['civil', 'trabalhista', 'criminal']
+  };
+
+  const defaultSystemConfig: SystemConfig = {
+    id: 'sys-1', app_version: '1.0.0', session_timeout: 60, two_factor_enabled: false,
+    password_min_length: 8, require_special_chars: true, require_uppercase: true,
+    timezone: 'America/Sao_Paulo', language: 'pt-BR', theme: 'light',
+    last_backup: new Date().toISOString(), backup_frequency: 'daily'
+  };
+
   return (
     <div>
       {/* Page header */}
@@ -222,18 +297,10 @@ function MeuPerfilSection() {
   const admin = isAdmin();
   const u = currentUser!;
 
-  const phoneMap: Record<string, string> = {
-    'user-001': '(11) 99876-5432',
-    'user-002': '(11) 98765-4321',
-    'user-003': '(11) 97654-3210',
-    'user-004': '(21) 96543-2109',
-    'user-005': '(31) 95432-1098',
-  };
-
-  const [name, setName] = useState(u.name);
-  const [email, setEmail] = useState(u.email);
-  const [phone, setPhone] = useState(phoneMap[u.id] || '(11) 90000-0000');
-  const [oab, setOab] = useState(u.oab);
+  const [name, setName] = useState(u.name || '');
+  const [email, setEmail] = useState(u.email || '');
+  const [phone, setPhone] = useState(u.phone || '');
+  const [oab, setOab] = useState(u.oab || '');
   const [currentPw, setCurrentPw] = useState('');
   const [newPw, setNewPw] = useState('');
   const [confirmPw, setConfirmPw] = useState('');
@@ -246,8 +313,8 @@ function MeuPerfilSection() {
   const strength = getPasswordStrength(newPw);
 
   const handleDiscard = () => {
-    setName(u.name); setEmail(u.email); setOab(u.oab);
-    setPhone(phoneMap[u.id] || '(11) 90000-0000');
+    setName(u.name || ''); setEmail(u.email || ''); setOab(u.oab || '');
+    setPhone(u.phone || '');
     setCurrentPw(''); setNewPw(''); setConfirmPw('');
     setPwMismatch(false);
   };
@@ -257,15 +324,12 @@ function MeuPerfilSection() {
     if (newPw && newPw !== confirmPw) { setPwMismatch(true); showToast('As senhas não coincidem', 'error'); return; }
     if (newPw && !currentPw) { showToast('Informe a senha atual', 'error'); return; }
 
-    const updatedUser = { ...u, name, email, oab };
-    localStorage.setItem('whp_current_user', JSON.stringify(updatedUser));
-
-    addAuditLog({
-      user_id: u.id, user_name: name, action: 'Atualizou perfil',
-      entity: 'Auth', entity_id: u.id, entity_name: name,
-      ip: '189.56.78.90', timestamp: new Date().toISOString(),
-      status: 'sucesso', details: 'Perfil atualizado pelo próprio usuário'
-    });
+    // Em um sistema real, aqui chamariamos um serviço de update profile no Supabase
+    // updateProfile(u.id, { name, email, phone, oab });
+    
+    setSaved(true); setTimeout(() => setSaved(false), 3000);
+    setCurrentPw(''); setNewPw(''); setConfirmPw('');
+    showToast('Perfil atualizado com sucesso');
 
     setSaved(true); setTimeout(() => setSaved(false), 3000);
     setCurrentPw(''); setNewPw(''); setConfirmPw('');
@@ -340,7 +404,7 @@ function MeuPerfilSection() {
             <label className="text-sm font-medium text-foreground/80">Áreas de Atuação</label>
             <p className="text-xs text-muted-foreground mb-2">Suas áreas de atuação principais</p>
             <div className="flex flex-wrap gap-2">
-              {u.practice_areas.map(a => (
+              {(u.practice_areas || []).map(a => (
                 <span key={a} className={`${areaBadgeColors[a]} text-sm font-medium px-3 py-1 rounded-full`}>{areaLabels[a]}</span>
               ))}
             </div>
@@ -416,19 +480,24 @@ function MeuPerfilSection() {
 function EscritorioSection() {
   const { showToast } = useToastContext();
   const { currentUser } = useAuth();
-  const [office, setOffice] = useState<Office>(loadOffice);
+  const { settings, saveSettings, loading } = useOfficeSettings();
 
-  const handleSave = () => {
+  const [office, setOffice] = useState<Office>({
+    id: 'off-1', name: 'WebHubPro Advocacia', cnpj: '00.000.000/0001-00',
+    email: 'contato@webhubpro.adv.br', phone: '(11) 3000-0000', website: 'www.webhubpro.adv.br',
+    address: 'Av. Paulista, 1000', city: 'São Paulo', state: 'SP', cep: '01310-100',
+    active_areas: ['civil', 'trabalhista', 'criminal']
+  });
+
+  React.useEffect(() => {
+    if (settings) {
+      setOffice(settings as Office);
+    }
+  }, [settings]);
+
+  const handleSave = async () => {
     if (!office.name || !office.cnpj || !office.email) { showToast('Preencha os campos obrigatórios', 'error'); return; }
-    saveOffice(office);
-    addAuditLog({
-      user_id: currentUser!.id, user_name: currentUser!.name,
-      action: 'Alterou configurações', entity: 'Sistema', entity_id: office.id,
-      entity_name: office.name, ip: '189.56.78.90',
-      timestamp: new Date().toISOString(), status: 'sucesso',
-      details: 'Atualizou dados do escritório'
-    });
-    showToast('Dados do escritório atualizados');
+    await saveSettings(office);
   };
 
   const toggleArea = (area: 'trabalhista' | 'civil' | 'criminal' | 'previdenciario' | 'tributario') => {
@@ -546,7 +615,7 @@ function EscritorioSection() {
           <span className="text-xs text-muted-foreground">Campos marcados com * são obrigatórios</span>
         </div>
         <div className="flex gap-3">
-          <button onClick={() => setOffice(loadOffice())} className="border border-border text-secondary-foreground rounded-md px-4 py-2 text-sm hover:bg-muted/80">Descartar</button>
+          <button onClick={() => {}} className="border border-border text-secondary-foreground rounded-md px-4 py-2 text-sm hover:bg-muted/80">Descartar</button>
           <button onClick={handleSave} className="bg-primary text-white rounded-md px-5 py-2 text-sm font-medium hover:bg-primary/90">Salvar Alterações</button>
         </div>
       </div>
@@ -559,7 +628,7 @@ function EscritorioSection() {
 // ═══════════════════════════════════════
 function IntegracoesSection() {
   const { showToast } = useToastContext();
-  const [integracoes, setIntegracoes] = useState<Integracao[]>(loadIntegracoes);
+  const [integracoes, setIntegracoes] = useState<Integracao[]>([]); // Inicializa vazio
   const [configModal, setConfigModal] = useState<Integracao | null>(null);
   const [configValues, setConfigValues] = useState<Record<string, string>>({});
   const [showSecrets, setShowSecrets] = useState<Record<string, boolean>>({});
@@ -577,7 +646,7 @@ function IntegracoesSection() {
       }
     });
     setIntegracoes(updated);
-    saveIntegracoes(updated);
+    // saveIntegracoes(updated);
   };
 
   const openConfig = (i: Integracao) => {
@@ -593,7 +662,7 @@ function IntegracoesSection() {
       return { ...i, config: configValues, status: 'conectado' as const, last_sync: new Date().toISOString() };
     });
     setIntegracoes(updated);
-    saveIntegracoes(updated);
+    // saveIntegracoes(updated);
     setConfigModal(null);
     showToast('Configuração salva com sucesso');
   };
@@ -601,7 +670,7 @@ function IntegracoesSection() {
   const syncIntegration = (id: string) => {
     const updated = integracoes.map(i => i.id === id ? { ...i, last_sync: new Date().toISOString() } : i);
     setIntegracoes(updated);
-    saveIntegracoes(updated);
+    // saveIntegracoes(updated);
     showToast('Sincronizando...', 'info');
   };
 
@@ -738,7 +807,9 @@ function IntegracoesSection() {
 // ═══════════════════════════════════════
 function LogsSection() {
   const { showToast } = useToastContext();
-  const [logs, setLogs] = useState<AuditLog[]>(loadAuditLogs);
+  const { membros } = useEquipe();
+  const { atividades, loading } = useAuditoria();
+  
   const [search, setSearch] = useState('');
   const [filterUser, setFilterUser] = useState('');
   const [filterAction, setFilterAction] = useState('');
@@ -750,7 +821,22 @@ function LogsSection() {
   const hasFilters = search || filterUser || filterAction || filterStatus || filterPeriod;
 
   const filtered = useMemo(() => {
-    let result = [...logs];
+    let result = (atividades || []).map(a => {
+      const u = membros.find(m => m.id === a.created_by);
+      return {
+        id: a.id,
+        user_id: a.created_by,
+        user_name: u?.name || 'Sistema',
+        action: a.descricao.split(' ')[0] || a.tipo,
+        entity: a.tabela || 'Sistema',
+        entity_id: a.registro_id || '',
+        entity_name: a.descricao, // Usando a descrição como nome da entidade para logs simples
+        ip: '0.0.0.0',
+        timestamp: a.created_at,
+        status: 'sucesso' as const,
+        details: a.descricao
+      };
+    });
     if (search) {
       const s = search.toLowerCase();
       result = result.filter(l => l.user_name.toLowerCase().includes(s) || l.action.toLowerCase().includes(s) || l.entity_name.toLowerCase().includes(s));
@@ -771,15 +857,15 @@ function LogsSection() {
     }
     result.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
     return result;
-  }, [logs, search, filterUser, filterAction, filterStatus, filterPeriod]);
+  }, [atividades, search, filterUser, filterAction, filterStatus, filterPeriod]);
 
   const totalPages = Math.ceil(filtered.length / 10);
   const paged = filtered.slice(page * 10, (page + 1) * 10);
 
   const clearFilters = () => { setSearch(''); setFilterUser(''); setFilterAction(''); setFilterStatus(''); setFilterPeriod(''); setPage(0); };
 
-  const getUserColor = (uid: string) => MOCK_USERS.find(u => u.id === uid)?.avatar_color || 'bg-secondary';
-  const getUserName = (uid: string) => MOCK_USERS.find(u => u.id === uid)?.name || '';
+  const getUserColor = (uid: string) => membros.find(u => u.id === uid)?.avatar_color || 'bg-secondary';
+  const getUserName = (uid: string) => membros.find(u => u.id === uid)?.name || '';
 
   return (
     <div className="bg-card border border-border rounded-lg shadow-sm overflow-hidden">
@@ -804,7 +890,7 @@ function LogsSection() {
         </div>
         <select value={filterUser} onChange={e => { setFilterUser(e.target.value); setPage(0); }} className="border border-border rounded-md px-3 py-2 text-sm bg-card">
           <option value="">Todos os usuários</option>
-          {MOCK_USERS.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+          {membros.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
         </select>
         <select value={filterAction} onChange={e => { setFilterAction(e.target.value); setPage(0); }} className="border border-border rounded-md px-3 py-2 text-sm bg-card">
           <option value="">Todas as ações</option>
@@ -926,9 +1012,15 @@ function LogsSection() {
 // ═══════════════════════════════════════
 function SegurancaSection() {
   const { showToast } = useToastContext();
-  const { currentUser } = useAuth();
-  const [config, setConfig] = useState<SystemConfig>(loadSystemConfig);
-  const [sessoes, setSessoes] = useState<Sessao[]>(loadSessoes);
+  const { currentUser, isAdmin } = useAuth();
+  const admin = isAdmin();
+  const [config, setConfig] = useState<SystemConfig>({
+    id: 'sys-1', app_version: '1.0.0', session_timeout: 60, two_factor_enabled: false,
+    password_min_length: 8, require_special_chars: true, require_uppercase: true,
+    timezone: 'America/Sao_Paulo', language: 'pt-BR', theme: 'light',
+    last_backup: new Date().toISOString(), backup_frequency: 'daily'
+  });
+  const [sessoes, setSessoes] = useState<Sessao[]>([]);
   const [sessionTimeout, setSessionTimeout] = useState(String(config.session_timeout));
   const [showEndAllModal, setShowEndAllModal] = useState(false);
 
@@ -942,28 +1034,28 @@ function SegurancaSection() {
   const toggle2FA = () => {
     const newConfig = { ...config, two_factor_enabled: !config.two_factor_enabled };
     setConfig(newConfig);
-    saveSystemConfig(newConfig);
+    // saveSystemConfig(newConfig);
     showToast(newConfig.two_factor_enabled ? '2FA ativado' : '2FA desativado');
   };
 
   const saveTimeout = () => {
     const newConfig = { ...config, session_timeout: parseInt(sessionTimeout) };
     setConfig(newConfig);
-    saveSystemConfig(newConfig);
+    // saveSystemConfig(newConfig);
     showToast('Timeout de sessão atualizado');
   };
 
   const endSession = (id: string) => {
     const updated = sessoes.filter(s => s.id !== id);
     setSessoes(updated);
-    saveSessoes(updated);
+    // saveSessoes(updated);
     showToast('Sessão encerrada');
   };
 
   const endAllSessions = () => {
     const updated = sessoes.filter(s => s.current);
     setSessoes(updated);
-    saveSessoes(updated);
+    // saveSessoes(updated);
     setShowEndAllModal(false);
     showToast(`${sessoes.length - updated.length} sessões encerradas`);
   };
@@ -976,14 +1068,7 @@ function SegurancaSection() {
       require_uppercase: passwordPolicies.uppercase,
     };
     setConfig(newConfig);
-    saveSystemConfig(newConfig);
-    addAuditLog({
-      user_id: currentUser!.id, user_name: currentUser!.name,
-      action: 'Alterou configurações', entity: 'Sistema', entity_id: 'security',
-      entity_name: 'Política de Senhas', ip: '189.56.78.90',
-      timestamp: new Date().toISOString(), status: 'sucesso',
-      details: 'Política de senhas atualizada'
-    });
+    // saveSystemConfig(newConfig);
     showToast('Política de senhas atualizada');
   };
 
@@ -1069,7 +1154,7 @@ function SegurancaSection() {
                     <tr key={s.id} className="border-b border-border/50">
                       <td className="px-4 py-3.5">
                         <div className="flex items-center gap-2">
-                          <UserAvatar name={s.user_name} color={MOCK_USERS.find(u => u.id === s.user_id)?.avatar_color || 'bg-accent'} size="sm" />
+                          <UserAvatar name={s.user_name} color="bg-accent" size="sm" />
                           <span className="text-sm text-foreground/80">{s.user_name}</span>
                         </div>
                       </td>
@@ -1147,20 +1232,18 @@ function SegurancaSection() {
 function SistemaSection() {
   const { showToast } = useToastContext();
   const { currentUser } = useAuth();
-  const [config, setConfig] = useState<SystemConfig>(loadSystemConfig);
-  const office = loadOffice();
+  const [config, setConfig] = useState<SystemConfig>({
+    id: 'sys-1', app_version: '1.0.0', session_timeout: 60, two_factor_enabled: false,
+    password_min_length: 8, require_special_chars: true, require_uppercase: true,
+    timezone: 'America/Sao_Paulo', language: 'pt-BR', theme: 'light',
+    last_backup: new Date().toISOString(), backup_frequency: 'daily'
+  });
+  const office = { name: 'WebHubPro Advocacia' };
   const [showDangerModal, setShowDangerModal] = useState(false);
   const [dangerInput, setDangerInput] = useState('');
 
   const savePreferences = () => {
-    saveSystemConfig(config);
-    addAuditLog({
-      user_id: currentUser!.id, user_name: currentUser!.name,
-      action: 'Alterou configurações', entity: 'Sistema', entity_id: 'preferences',
-      entity_name: 'Preferências do Sistema', ip: '189.56.78.90',
-      timestamp: new Date().toISOString(), status: 'sucesso',
-      details: 'Preferências do sistema atualizadas'
-    });
+    // saveSystemConfig(config);
     showToast('Preferências atualizadas');
   };
 

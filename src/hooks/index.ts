@@ -6,3 +6,4 @@ export { useEventos } from './useEventos';
 export { useLancamentos } from './useLancamentos';
 export { useDocumentos } from './useDocumentos';
 export { useAuditoria } from './useAuditoria';
+export { useEquipe } from './useEquipe';

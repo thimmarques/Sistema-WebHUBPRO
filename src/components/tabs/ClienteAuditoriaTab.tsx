@@ -10,11 +10,11 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '.
 import { Eye, Download, Filter } from 'lucide-react';
 
 interface ClienteAuditoriaTabProps {
-  cliente: Cliente;
+  clientId: string;
 }
 
-export function ClienteAuditoriaTab({ cliente }: ClienteAuditoriaTabProps) {
-  const { atividades, loading } = useAuditoria(cliente.id);
+export function ClienteAuditoriaTab({ clientId }: ClienteAuditoriaTabProps) {
+  const { atividades, loading } = useAuditoria(clientId);
   const { role } = usePermissions();
   const [filtroTipo, setFiltroTipo] = useState<string | null>(null);
   const [filtroUsuario, setFiltroUsuario] = useState<string | null>(null);
@@ -36,7 +36,7 @@ export function ClienteAuditoriaTab({ cliente }: ClienteAuditoriaTabProps) {
     }
     
     if (filtroUsuario) {
-      filtered = filtered.filter(a => a.usuario_id === filtroUsuario);
+      filtered = filtered.filter(a => a.created_by === filtroUsuario);
     }
     
     return filtered;
@@ -58,7 +58,13 @@ export function ClienteAuditoriaTab({ cliente }: ClienteAuditoriaTabProps) {
   };
 
   const usuariosUnicos = useMemo(() => {
-    return [...new Set(atividades.map(a => a.usuario_id))];
+    const unique = new Map();
+    atividades.forEach(a => {
+      if (!unique.has(a.created_by)) {
+        unique.set(a.created_by, a.usuario_nome || a.created_by);
+      }
+    });
+    return Array.from(unique.entries());
   }, [atividades]);
 
   if (loading) {
@@ -87,6 +93,7 @@ export function ClienteAuditoriaTab({ cliente }: ClienteAuditoriaTabProps) {
           <option value="update">Atualização</option>
           <option value="delete">Deleção</option>
           <option value="read">Leitura</option>
+          <option value="anotacao">Anotação</option>
         </select>
 
         <select
@@ -95,9 +102,9 @@ export function ClienteAuditoriaTab({ cliente }: ClienteAuditoriaTabProps) {
           className="px-3 py-2 border rounded text-sm"
         >
           <option value="">Todos os usuários</option>
-          {usuariosUnicos.map(usuarioId => (
-            <option key={usuarioId} value={usuarioId}>
-              {usuarioId}
+          {usuariosUnicos.map(([id, nome]) => (
+            <option key={id} value={id}>
+              {nome}
             </option>
           ))}
         </select>
@@ -128,13 +135,13 @@ export function ClienteAuditoriaTab({ cliente }: ClienteAuditoriaTabProps) {
                 <TableCell className="text-sm">
                   {formatDateTime(atividade.created_at)}
                 </TableCell>
-                <TableCell className="text-sm">{atividade.usuario_id}</TableCell>
+                <TableCell className="text-sm">{atividade.usuario_nome || atividade.created_by}</TableCell>
                 <TableCell>
                   <Badge className={getTipoColor(atividade.tipo)}>
                     {atividade.tipo.charAt(0).toUpperCase() + atividade.tipo.slice(1)}
                   </Badge>
                 </TableCell>
-                <TableCell className="text-sm capitalize">{atividade.entidade}</TableCell>
+                <TableCell className="text-sm capitalize">{atividade.tabela}</TableCell>
                 <TableCell className="text-sm">{atividade.descricao}</TableCell>
                 <TableCell className="text-right">
                   <Button variant="ghost" size="sm" title="Visualizar detalhes">

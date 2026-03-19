@@ -10,28 +10,16 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '.
 import { Calendar, Clock, AlertCircle, Filter } from 'lucide-react';
 
 interface ClienteEventosTabProps {
-  cliente: Cliente;
+  clientId: string;
 }
 
-export function ClienteEventosTab({ cliente }: ClienteEventosTabProps) {
-  const { processos, loading: processosLoading } = useProcessos(cliente.id);
+export function ClienteEventosTab({ clientId }: ClienteEventosTabProps) {
+  const { eventos: todosEventos, loading: eventosLoading } = useEventos(undefined, clientId);
   const [filtroTipo, setFiltroTipo] = useState<string | null>(null);
   const [filtroStatus, setFiltroStatus] = useState<string | null>(null);
 
-  // Agregar eventos de todos os processos do cliente
-  const todosEventos = useMemo(() => {
-    const eventos: (Evento & { processo_numero: string })[] = [];
-    
-    processos.forEach(processo => {
-      // TODO: Implementar carregamento de eventos por processo
-      // Por enquanto, retornar array vazio
-    });
-    
-    return eventos;
-  }, [processos]);
-
   const eventosFiltrados = useMemo(() => {
-    let filtered = todosEventos;
+    let filtered = todosEventos || [];
     
     if (filtroTipo) {
       filtered = filtered.filter(e => e.tipo === filtroTipo);
@@ -70,7 +58,7 @@ export function ClienteEventosTab({ cliente }: ClienteEventosTabProps) {
     }
   };
 
-  if (processosLoading) {
+  if (eventosLoading) {
     return <div className="text-center py-8">Carregando eventos...</div>;
   }
 
