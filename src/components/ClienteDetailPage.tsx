@@ -279,7 +279,7 @@ export default function ClienteDetailPage({ clientId, onBack, onNavigateProcesso
   // handlers
   const handleSaveCliente = async (c: Cliente) => {
     try {
-      await saveCliente(c);
+      await saveCliente(c.id, c);
       setSlideOpen(false);
       showToast('Cliente atualizado com sucesso', 'success');
     } catch (error) {

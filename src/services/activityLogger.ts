@@ -1,207 +1,54 @@
-import { supabase } from '../lib/supabase';
-import { Atividade, TipoAtividade } from '../types/atividade';
+import { supabase } from '@/lib/supabase';
+import { AtividadeCreate } from '@/types/atividade';
 
-export type { Atividade, TipoAtividade };
+export async function logActivity(activity: any, ...args: any[]) {
+  try {
+    const act = typeof activity === 'string' 
+      ? { usuario_id: activity, entidade: args[0], entidade_id: args[1], descricao: args[2], tipo: args[3] || 'sistema' }
+      : activity;
+
+    const { error } = await supabase.from('atividades').insert([{
+      ...act,
+      created_at: new Date().toISOString()
+    }]);
+    if (error) console.error('Erro ao logar:', error);
+  } catch (err) {
+    console.error('Falha no log:', err);
+  }
+}
+
+export async function logLogin(userId: string, email: string) {
+  await logActivity({ usuario_id: userId, entidade: 'usuario', entidade_id: userId, descricao: `Login: ${email}`, tipo: 'login' });
+}
+
+export async function logLogout(userId: string, email: string) {
+  await logActivity({ usuario_id: userId, entidade: 'usuario', entidade_id: userId, descricao: `Logout: ${email}`, tipo: 'logout' });
+}
+
+export async function logCreateCliente(userId: string, id: string, nome: string) {
+  await logActivity({ usuario_id: userId, entidade: 'clientes', entidade_id: id, descricao: `Criou: ${nome}`, tipo: 'create' });
+}
+
+export async function logUpdateCliente(userId: string, id: string, nome: string, antigo: any, novo: any) {
+  await logActivity({ usuario_id: userId, entidade: 'clientes', entidade_id: id, descricao: `Atualizou: ${nome}`, tipo: 'update', dados_antigos: antigo, dados_novos: novo });
+}
+
+export async function logDeleteCliente(userId: string, id: string, nome: string) {
+  await logActivity({ usuario_id: userId, entidade: 'clientes', entidade_id: id, descricao: `Deletou: ${nome}`, tipo: 'delete' });
+}
+
+export const logCreate = logActivity;
+export const logUpdate = logActivity;
+export const logDelete = logActivity;
+export const logExport = logActivity;
+export const logImport = logActivity;
 
 export const Descriptions = {
-  CLIENTE_CRIADO: 'Cliente criado',
-  CLIENTE_ATUALIZADO: 'Cliente atualizado',
-  CLIENTE_DELETADO: 'Cliente deletado',
-  PROCESSO_CRIADO: 'Processo criado',
-  PROCESSO_ATUALIZADO: 'Processo atualizado',
-  PROCESSO_DELETADO: 'Processo deletado',
-  EVENTO_CRIADO: 'Evento criado',
-  EVENTO_ATUALIZADO: 'Evento atualizado',
-  EVENTO_DELETADO: 'Evento deletado',
-  LANCAMENTO_CRIADO: 'Lançamento criado',
-  LANCAMENTO_ATUALIZADO: 'Lançamento atualizado',
-  LANCAMENTO_DELETADO: 'Lançamento deletado',
-  LOGIN: 'Usuário fez login',
-  LOGOUT: 'Usuário fez logout',
-  RELATORIO_EXPORTADO: 'Relatório exportado',
-  DADOS_IMPORTADOS: 'Dados importados',
-} as const;
-
-/**
- * Registra uma atividade genérica no sistema
- * @param usuarioId ID do usuário que realizou a ação
- * @param tipo Tipo de atividade (create, read, update, delete, etc.)
- * @param entidade Nome da entidade afetada (cliente, processo, etc.)
- * @param entidadeId ID da entidade afetada
- * @param descricao Descrição da atividade
- * @param dadosAntigos Dados anteriores (para UPDATE)
- * @param dadosNovos Dados novos (para UPDATE)
- */
-export async function logActivity(
-  usuarioId: string,
-  tipo: TipoAtividade,
-  entidade: string,
-  entidadeId: string,
-  descricao: string,
-  dadosAntigos?: Record<string, any>,
-  dadosNovos?: Record<string, any>
-): Promise<void> {
-  try {
-    const atividade: Atividade = {
-      id: `atividade-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-      usuario_id: usuarioId,
-      tipo,
-      entidade,
-      entidade_id: entidadeId,
-      descricao,
-      dados_antigos: dadosAntigos,
-      dados_novos: dadosNovos,
-      user_agent: typeof navigator !== 'undefined' ? navigator.userAgent : undefined,
-      timestamp: new Date().toISOString(),
-      created_at: new Date().toISOString(),
-    };
-
-    // TODO: Implementar INSERT em tabela 'atividades' do Supabase
-    // const { error } = await supabase
-    //   .from('atividades')
-    //   .insert([atividade]);
-    // if (error) console.error('Erro ao registrar atividade:', error);
-
-    // Por enquanto, apenas log no console
-    console.log('[ACTIVITY LOG]', atividade);
-  } catch (error) {
-    console.error('Erro ao registrar atividade:', error);
-    // Não deve bloquear a operação principal
-  }
-}
-
-/**
- * Registra a criação de uma entidade
- */
-export async function logCreate(
-  usuarioId: string,
-  entidade: string,
-  entidadeId: string,
-  dados: Record<string, any>,
-  descricao?: string
-): Promise<void> {
-  await logActivity(
-    usuarioId,
-    'create',
-    entidade,
-    entidadeId,
-    descricao || `${entidade} criado`,
-    undefined,
-    dados
-  );
-}
-
-/**
- * Registra a atualização de uma entidade
- */
-export async function logUpdate(
-  usuarioId: string,
-  entidade: string,
-  entidadeId: string,
-  dadosAntigos: Record<string, any>,
-  dadosNovos: Record<string, any>,
-  descricao?: string
-): Promise<void> {
-  // Calcular apenas os campos que mudaram
-  const camposAlterados: Record<string, any> = {};
-  for (const key in dadosNovos) {
-    if (dadosAntigos[key] !== dadosNovos[key]) {
-      camposAlterados[key] = {
-        antes: dadosAntigos[key],
-        depois: dadosNovos[key],
-      };
-    }
-  }
-
-  await logActivity(
-    usuarioId,
-    'update',
-    entidade,
-    entidadeId,
-    descricao || `${entidade} atualizado`,
-    dadosAntigos,
-    dadosNovos
-  );
-}
-
-/**
- * Registra a deleção de uma entidade (soft delete)
- */
-export async function logDelete(
-  usuarioId: string,
-  entidade: string,
-  entidadeId: string,
-  dados: Record<string, any>,
-  descricao?: string
-): Promise<void> {
-  await logActivity(
-    usuarioId,
-    'delete',
-    entidade,
-    entidadeId,
-    descricao || `${entidade} deletado`,
-    dados,
-    { deleted_at: new Date().toISOString() }
-  );
-}
-
-/**
- * Registra login do usuário
- */
-export async function logLogin(usuarioId: string, email: string): Promise<void> {
-  await logActivity(
-    usuarioId,
-    'login',
-    'usuario',
-    usuarioId,
-    `Login realizado: ${email}`
-  );
-}
-
-/**
- * Registra logout do usuário
- */
-export async function logLogout(usuarioId: string, email: string): Promise<void> {
-  await logActivity(
-    usuarioId,
-    'logout',
-    'usuario',
-    usuarioId,
-    `Logout realizado: ${email}`
-  );
-}
-
-/**
- * Registra exportação de relatório
- */
-export async function logExport(
-  usuarioId: string,
-  tipoRelatorio: string,
-  descricao?: string
-): Promise<void> {
-  await logActivity(
-    usuarioId,
-    'export',
-    'relatorio',
-    `relatorio-${tipoRelatorio}`,
-    descricao || `Relatório ${tipoRelatorio} exportado`
-  );
-}
-
-/**
- * Registra importação de dados
- */
-export async function logImport(
-  usuarioId: string,
-  tipoImportacao: string,
-  quantidadeRegistros: number,
-  descricao?: string
-): Promise<void> {
-  await logActivity(
-    usuarioId,
-    'import',
-    'importacao',
-    `importacao-${tipoImportacao}`,
-    descricao || `${quantidadeRegistros} registros importados (${tipoImportacao})`
-  );
-}
+  CLIENTE: 'cliente',
+  PROCESSO: 'processo',
+  LANCAMENTO: 'lançamento',
+  AUDIENCIA: 'audiência',
+  EVENTO_ATUALIZADO: 'evento_atualizado',
+  EVENTO_CRIADO: 'evento_criado',
+  LANCAMENTO_CRIADO: 'lancamento_criado'
+};

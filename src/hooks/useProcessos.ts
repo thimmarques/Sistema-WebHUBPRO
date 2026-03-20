@@ -18,26 +18,25 @@ export function useProcessos(clienteId?: string) {
     
     // RBAC: Filtrar por escopo de acesso
     if (role === 'advogado') {
-      // Advogado vê apenas processos de clientes que criou ou é responsável
+      // Advogado vê apenas processos onde é responsável ou criador
       filtered = filtered.filter(p => 
         p.responsible_id === currentUser?.id || 
         p.created_by === currentUser?.id
       );
     } else if (role === 'estagiario') {
-      // Estagiário vê apenas processos de clientes do seu advogado responsável
+      // Estagiário vê apenas o que criou
       filtered = filtered.filter(p => 
-        p.responsible_id === currentScope?.responsible_id
+        p.created_by === currentUser?.id
       );
     }
-    // Admin vê tudo
     
     // Filtrar por clienteId se fornecido
     if (clienteId) {
-      filtered = filtered.filter(p => p.cliente_id === clienteId);
+      filtered = filtered.filter(p => p.polo_ativo_id === clienteId);
     }
     
     return filtered;
-  }, [processos, clienteId, role, currentUser?.id, currentScope?.responsible_id]);
+  }, [processos, clienteId, role, currentUser?.id]);
 
   // Carregar processos do Supabase
   const load = useCallback(async () => {

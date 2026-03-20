@@ -26,7 +26,7 @@ export function useLancamentos(clienteId?: string, processoId?: string) {
     } else if (role === 'estagiario') {
       // Estagiário vê apenas lançamentos de clientes do seu advogado responsável
       filtered = filtered.filter(l => 
-        l.responsible_id === currentScope?.responsible_id
+        l.responsible_id === currentUser?.id // No caso de ele ter criado
       );
     }
     // Admin vê tudo
@@ -41,11 +41,11 @@ export function useLancamentos(clienteId?: string, processoId?: string) {
       filtered = filtered.filter(l => l.processo_id === processoId);
     }
     
-    // Ordenar por data decrescente
+    // Ordenar por vencimento decrescente
     return filtered.sort((a, b) => 
-      new Date(b.data).getTime() - new Date(a.data).getTime()
+      new Date(b.vencimento).getTime() - new Date(a.vencimento).getTime()
     );
-  }, [lancamentos, clienteId, processoId, role, currentUser?.id, currentScope?.responsible_id]);
+  }, [lancamentos, clienteId, processoId, role, currentUser?.id]);
 
   // Carregar lançamentos do Supabase
   const load = useCallback(async () => {
@@ -56,7 +56,7 @@ export function useLancamentos(clienteId?: string, processoId?: string) {
         .from('lancamentos')
         .select('*')
         .is('deleted_at', null) // Excluir soft-deleted
-        .order('data', { ascending: false });
+        .order('vencimento', { ascending: false });
 
       // Filtrar por clienteId se fornecido
       if (clienteId) {

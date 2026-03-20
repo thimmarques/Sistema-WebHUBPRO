@@ -1,13 +1,20 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Scale, Loader2 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 
 export default function Login() {
-  const { login } = useAuth();
+  const { login, error: authError, clearError } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
+
+  // ✅ INTEGRAÇÃO: Sincronizar erro do contexto com estado local
+  useEffect(() => {
+    if (authError) {
+      setError(authError);
+    }
+  }, [authError]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -24,6 +31,19 @@ export default function Login() {
     } finally {
       setIsLoading(false);
     }
+  };
+
+  // ✅ Limpar erro quando usuário começa a digitar
+  const handleEmailChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setEmail(e.target.value);
+    if (error) setError('');
+    if (authError) clearError();
+  };
+
+  const handlePasswordChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setPassword(e.target.value);
+    if (error) setError('');
+    if (authError) clearError();
   };
 
   return (
@@ -46,7 +66,7 @@ export default function Login() {
               <input
                 type="email"
                 value={email}
-                onChange={(e) => setEmail(e.target.value)}
+                onChange={handleEmailChange}
                 className="w-full border border-border rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring/20 focus:border-accent transition-colors"
                 placeholder="seu@email.com"
                 required
@@ -57,17 +77,24 @@ export default function Login() {
               <input
                 type="password"
                 value={password}
-                onChange={(e) => setPassword(e.target.value)}
+                onChange={handlePasswordChange}
                 className="w-full border border-border rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring/20 focus:border-accent transition-colors"
                 placeholder="••••••••"
                 required
               />
             </div>
-            {error && <p className="text-sm text-red-500">{error}</p>}
+            
+            {/* ✅ Exibir erro com melhor UX */}
+            {error && (
+              <div className="bg-red-50 border border-red-200 rounded-md p-3">
+                <p className="text-sm text-red-700">{error}</p>
+              </div>
+            )}
+            
             <button
               type="submit"
               disabled={isLoading}
-              className="w-full bg-primary hover:bg-primary/90 text-primary-foreground font-medium text-sm py-2.5 rounded-md transition-colors flex items-center justify-center gap-2"
+              className="w-full bg-primary hover:bg-primary/90 text-primary-foreground font-medium text-sm py-2.5 rounded-md transition-colors flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {isLoading ? (
                 <>

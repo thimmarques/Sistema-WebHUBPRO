@@ -97,7 +97,7 @@ export default function RelatoriosPage() {
   const allClientes = useMemo(() => admin ? cl : cl.filter(c => c.responsible_id === currentUser!.id), [cl, currentUser, admin]);
   const allLancamentos = useMemo(() => admin ? ll : [], [ll, admin]);
   const allEventos = useMemo(() => filterByUser(ev, currentUser!.id, admin), [ev, currentUser, admin]);
-  const allAtividades = useMemo(() => admin ? at : at.filter(a => a.usuario_id === currentUser!.id), [at, currentUser, admin]);
+  const allAtividades = useMemo(() => admin ? at : at.filter(a => a.created_by === currentUser!.id), [at, currentUser, admin]);
 
   /* ─── processos metrics ─── */
   const processosPorStatus = useMemo(() => {
@@ -684,7 +684,7 @@ export default function RelatoriosPage() {
               <Activity className="w-4 h-4 text-muted-foreground/80 mt-0.5 flex-shrink-0" />
               <div className="flex-1 min-w-0">
                 <div className="text-sm text-foreground">{a.descricao}</div>
-                <div className="text-xs text-muted-foreground mt-0.5">{formatDateBR(a.created_at)} · {membros.find(m => m.id === a.usuario_id)?.name || 'Sistema'}</div>
+                <div className="text-xs text-muted-foreground mt-0.5">{formatDateBR(a.created_at)} · {membros.find(m => m.id === a.created_by)?.name || 'Sistema'}</div>
               </div>
             </div>
           ))}

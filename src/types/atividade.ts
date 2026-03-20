@@ -1,15 +1,35 @@
-export type TipoAtividade = 'create' | 'read' | 'update' | 'delete' | 'login' | 'logout' | 'export' | 'import' | 'audiencia_realizada' | 'prazo_cumprido' | 'sistema' | 'anotacao';
+export type TipoAtividade = 
+  | 'login' | 'logout' | 'create' | 'read' | 'update' | 'delete' 
+  | 'export' | 'import' | 'error' | 'suspicious' | 'system';
 
 export interface Atividade {
   id: string;
-  tipo: string;
+  usuario_id: string;
+  created_by: string;
+  entidade: string;
   tabela: string;
+  entidade_id: string;
   registro_id: string;
   descricao: string;
+  tipo: string;
+  dados_antigos?: Record<string, any>;
+  dados_novos?: Record<string, any>;
   campos_alterados?: Record<string, any>;
-  created_by: string;
+  user_agent?: string;
+  timestamp: string;
   created_at: string;
-  deleted_at?: string;
-  // Campos virtuais/join
+  updated_at?: string;
+  deleted_at?: string | null;
   usuario_nome?: string;
+}
+
+export interface AtividadeCreate {
+  usuario_id: string;
+  entidade: string;
+  entidade_id: string;
+  descricao: string;
+  tipo: string;
+  dados_antigos?: Record<string, any>;
+  dados_novos?: Record<string, any>;
+  user_agent?: string;
 }

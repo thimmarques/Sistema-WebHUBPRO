@@ -1,0 +1,122 @@
+
+> react-example@0.0.0 lint
+> tsc --noEmit
+
+src/components/ClienteDetailPage.tsx(282,13): error TS2554: Expected 2 arguments, but got 1.
+src/components/ClienteSlideOver.tsx(128,16): error TS2339: Property 'preso_em' does not exist on type 'ClienteCriminal'.
+src/components/ClienteSlideOver.tsx(131,16): error TS2339: Property 'data_condenacao' does not exist on type 'ClienteCriminal'.
+src/components/ClienteSlideOver.tsx(132,15): error TS2339: Property 'pena_anos' does not exist on type 'ClienteCriminal'.
+src/components/ClienteSlideOver.tsx(132,44): error TS2339: Property 'pena_anos' does not exist on type 'ClienteCriminal'.
+src/components/ClienteSlideOver.tsx(135,16): error TS2339: Property 'tipo_monitoramento' does not exist on type 'ClienteCriminal'.
+src/components/ClienteSlideOver.tsx(141,14): error TS2339: Property 'fase_processual' does not exist on type 'ClienteTrabalhista'.
+src/components/ClienteSlideOver.tsx(144,16): error TS2339: Property 'tipo_demissao' does not exist on type 'ClienteTrabalhista'.
+src/components/ClienteSlideOver.tsx(149,13): error TS2339: Property 'tipo_demissao' does not exist on type 'ClienteTrabalhista'.
+src/components/ClienteSlideOver.tsx(150,16): error TS2339: Property 'motivo_justa_causa' does not exist on type 'ClienteTrabalhista'.
+src/components/ClienteSlideOver.tsx(151,16): error TS2339: Property 'data_justa_causa' does not exist on type 'ClienteTrabalhista'.
+src/components/ClienteSlideOver.tsx(154,82): error TS2339: Property 'tipo_demissao' does not exist on type 'ClienteTrabalhista'.
+src/components/ClienteSlideOver.tsx(155,16): error TS2339: Property 'motivo_demissao' does not exist on type 'ClienteTrabalhista'.
+src/components/ClienteSlideOver.tsx(162,14): error TS2339: Property 'data_fato_gerador' does not exist on type 'ClienteCivil'.
+src/components/ClienteSlideOver.tsx(163,14): error TS2339: Property 'fase_processual' does not exist on type 'ClienteCivil'.
+src/components/ClienteSlideOver.tsx(166,16): error TS2339: Property 'tipo_familia' does not exist on type 'ClienteCivil'.
+src/components/ClienteSlideOver.tsx(167,15): error TS2339: Property 'tem_filhos' does not exist on type 'ClienteCivil'.
+src/components/ClienteSlideOver.tsx(167,33): error TS2339: Property 'numero_filhos' does not exist on type 'ClienteCivil'.
+src/components/ClienteSlideOver.tsx(167,52): error TS2339: Property 'numero_filhos' does not exist on type 'ClienteCivil'.
+src/components/ClienteSlideOver.tsx(169,16): error TS2339: Property 'tipo_contrato' does not exist on type 'ClienteCivil'.
+src/components/ClienteSlideOver.tsx(170,15): error TS2339: Property 'valor_contrato' does not exist on type 'ClienteCivil'.
+src/components/ClienteSlideOver.tsx(170,49): error TS2339: Property 'valor_contrato' does not exist on type 'ClienteCivil'.
+src/components/ClienteSlideOver.tsx(172,16): error TS2339: Property 'tipo_imovel' does not exist on type 'ClienteCivil'.
+src/components/ClienteSlideOver.tsx(173,16): error TS2339: Property 'endereco_imovel' does not exist on type 'ClienteCivil'.
+src/components/ClienteSlideOver.tsx(175,16): error TS2339: Property 'tipo_consumidor' does not exist on type 'ClienteCivil'.
+src/components/ClienteSlideOver.tsx(176,15): error TS2339: Property 'valor_reclamado' does not exist on type 'ClienteCivil'.
+src/components/ClienteSlideOver.tsx(176,50): error TS2339: Property 'valor_reclamado' does not exist on type 'ClienteCivil'.
+src/components/ClienteSlideOver.tsx(178,16): error TS2339: Property 'tipo_sucessao' does not exist on type 'ClienteCivil'.
+src/components/ClienteSlideOver.tsx(179,15): error TS2339: Property 'valor_monte_mor' does not exist on type 'ClienteCivil'.
+src/components/ClienteSlideOver.tsx(179,50): error TS2339: Property 'valor_monte_mor' does not exist on type 'ClienteCivil'.
+src/components/ClienteSlideOver.tsx(187,14): error TS2339: Property 'data_filiacao' does not exist on type 'ClientePrevidenciario'.
+src/components/ClienteSlideOver.tsx(188,14): error TS2339: Property 'fase_processual' does not exist on type 'ClientePrevidenciario'.
+src/components/ClienteSlideOver.tsx(191,16): error TS2339: Property 'data_nascimento' does not exist on type 'ClientePrevidenciario'.
+src/components/ClienteSlideOver.tsx(192,15): error TS2339: Property 'tempo_contribuicao_meses' does not exist on type 'ClientePrevidenciario'.
+src/components/ClienteSlideOver.tsx(192,59): error TS2339: Property 'tempo_contribuicao_meses' does not exist on type 'ClientePrevidenciario'.
+src/components/ClienteSlideOver.tsx(194,15): error TS2339: Property 'tempo_contribuicao_meses' does not exist on type 'ClientePrevidenciario'.
+src/components/ClienteSlideOver.tsx(194,59): error TS2339: Property 'tempo_contribuicao_meses' does not exist on type 'ClientePrevidenciario'.
+src/components/ClienteSlideOver.tsx(195,16): error TS2339: Property 'data_ultimo_recolhimento' does not exist on type 'ClientePrevidenciario'.
+src/components/ClienteSlideOver.tsx(197,16): error TS2339: Property 'data_incapacidade' does not exist on type 'ClientePrevidenciario'.
+src/components/ClienteSlideOver.tsx(198,16): error TS2339: Property 'laudo_medico' does not exist on type 'ClientePrevidenciario'.
+src/components/ClienteSlideOver.tsx(200,16): error TS2339: Property 'data_inicio_afastamento' does not exist on type 'ClientePrevidenciario'.
+src/components/ClienteSlideOver.tsx(201,16): error TS2339: Property 'laudo_medico' does not exist on type 'ClientePrevidenciario'.
+src/components/ClienteSlideOver.tsx(203,16): error TS2339: Property 'data_acidente' does not exist on type 'ClientePrevidenciario'.
+src/components/ClienteSlideOver.tsx(205,16): error TS2339: Property 'data_obito' does not exist on type 'ClientePrevidenciario'.
+src/components/ClienteSlideOver.tsx(206,16): error TS2339: Property 'grau_parentesco' does not exist on type 'ClientePrevidenciario'.
+src/components/ClienteSlideOver.tsx(208,15): error TS2339: Property 'renda_familiar' does not exist on type 'ClientePrevidenciario'.
+src/components/ClienteSlideOver.tsx(208,49): error TS2339: Property 'renda_familiar' does not exist on type 'ClientePrevidenciario'.
+src/components/ClienteSlideOver.tsx(209,15): error TS2339: Property 'numero_dependentes' does not exist on type 'ClientePrevidenciario'.
+src/components/ClienteSlideOver.tsx(209,53): error TS2339: Property 'numero_dependentes' does not exist on type 'ClientePrevidenciario'.
+src/components/ClienteSlideOver.tsx(210,15): error TS2339: Property 'deficiencia_comprovada' does not exist on type 'ClientePrevidenciario'.
+src/components/ClienteSlideOver.tsx(216,14): error TS2339: Property 'fase_processual' does not exist on type 'ClienteTributario'.
+src/components/ClienteSlideOver.tsx(217,14): error TS2339: Property 'orgao_fiscalizador' does not exist on type 'ClienteTributario'.
+src/components/ClienteSlideOver.tsx(220,16): error TS2339: Property 'regime_tributario' does not exist on type 'ClienteTributario'.
+src/components/ClienteSlideOver.tsx(512,110): error TS2339: Property 'preso_em' does not exist on type 'ClienteCriminal'.
+src/components/ClienteSlideOver.tsx(519,119): error TS2339: Property 'data_condenacao' does not exist on type 'ClienteCriminal'.
+src/components/ClienteSlideOver.tsx(522,123): error TS2339: Property 'pena_anos' does not exist on type 'ClienteCriminal'.
+src/components/ClienteSlideOver.tsx(529,109): error TS2339: Property 'tipo_monitoramento' does not exist on type 'ClienteCriminal'.
+src/components/ClienteSlideOver.tsx(551,110): error TS2339: Property 'fase_processual' does not exist on type 'ClienteTrabalhista'.
+src/components/ClienteSlideOver.tsx(574,116): error TS2339: Property 'tipo_demissao' does not exist on type 'ClienteTrabalhista'.
+src/components/ClienteSlideOver.tsx(591,120): error TS2339: Property 'tipo_demissao' does not exist on type 'ClienteTrabalhista'.
+src/components/ClienteSlideOver.tsx(593,147): error TS2339: Property 'motivo_demissao' does not exist on type 'ClienteTrabalhista'.
+src/components/ClienteSlideOver.tsx(597,51): error TS2339: Property 'tipo_demissao' does not exist on type 'ClienteTrabalhista'.
+src/components/ClienteSlideOver.tsx(600,152): error TS2339: Property 'motivo_justa_causa' does not exist on type 'ClienteTrabalhista'.
+src/components/ClienteSlideOver.tsx(603,134): error TS2339: Property 'data_justa_causa' does not exist on type 'ClienteTrabalhista'.
+src/components/ClienteSlideOver.tsx(613,105): error TS2339: Property 'numero_funcionarios_envolvidos' does not exist on type 'ClienteTrabalhista'.
+src/components/ClienteSlideOver.tsx(616,83): error TS2339: Property 'departamento_responsavel' does not exist on type 'ClienteTrabalhista'.
+src/components/ClienteSlideOver.tsx(646,111): error TS2339: Property 'data_fato_gerador' does not exist on type 'ClienteCivil'.
+src/components/ClienteSlideOver.tsx(652,98): error TS2339: Property 'fase_processual' does not exist on type 'ClienteCivil'.
+src/components/ClienteSlideOver.tsx(663,99): error TS2339: Property 'tipo_familia' does not exist on type 'ClienteCivil'.
+src/components/ClienteSlideOver.tsx(677,60): error TS2339: Property 'tem_filhos' does not exist on type 'ClienteCivil'.
+src/components/ClienteSlideOver.tsx(678,91): error TS2339: Property 'tem_filhos' does not exist on type 'ClienteCivil'.
+src/components/ClienteSlideOver.tsx(680,48): error TS2339: Property 'tem_filhos' does not exist on type 'ClienteCivil'.
+src/components/ClienteSlideOver.tsx(683,153): error TS2339: Property 'tem_filhos' does not exist on type 'ClienteCivil'.
+src/components/ClienteSlideOver.tsx(687,41): error TS2339: Property 'tem_filhos' does not exist on type 'ClienteCivil'.
+src/components/ClienteSlideOver.tsx(689,123): error TS2339: Property 'numero_filhos' does not exist on type 'ClienteCivil'.
+src/components/ClienteSlideOver.tsx(698,100): error TS2339: Property 'tipo_contrato' does not exist on type 'ClienteCivil'.
+src/components/ClienteSlideOver.tsx(708,122): error TS2339: Property 'valor_contrato' does not exist on type 'ClienteCivil'.
+src/components/ClienteSlideOver.tsx(716,98): error TS2339: Property 'tipo_imovel' does not exist on type 'ClienteCivil'.
+src/components/ClienteSlideOver.tsx(725,99): error TS2339: Property 'valor_imovel' does not exist on type 'ClienteCivil'.
+src/components/ClienteSlideOver.tsx(728,101): error TS2339: Property 'endereco_imovel' does not exist on type 'ClienteCivil'.
+src/components/ClienteSlideOver.tsx(736,102): error TS2339: Property 'tipo_consumidor' does not exist on type 'ClienteCivil'.
+src/components/ClienteSlideOver.tsx(745,123): error TS2339: Property 'valor_reclamado' does not exist on type 'ClienteCivil'.
+src/components/ClienteSlideOver.tsx(753,100): error TS2339: Property 'tipo_sucessao' does not exist on type 'ClienteCivil'.
+src/components/ClienteSlideOver.tsx(762,123): error TS2339: Property 'valor_monte_mor' does not exist on type 'ClienteCivil'.
+src/components/ClienteSlideOver.tsx(796,125): error TS2339: Property 'data_filiacao' does not exist on type 'ClientePrevidenciario'.
+src/components/ClienteSlideOver.tsx(799,116): error TS2339: Property 'fase_processual' does not exist on type 'ClientePrevidenciario'.
+src/components/ClienteSlideOver.tsx(810,131): error TS2339: Property 'data_nascimento' does not exist on type 'ClientePrevidenciario'.
+src/components/ClienteSlideOver.tsx(813,150): error TS2339: Property 'tempo_contribuicao_meses' does not exist on type 'ClientePrevidenciario'.
+src/components/ClienteSlideOver.tsx(821,150): error TS2339: Property 'tempo_contribuicao_meses' does not exist on type 'ClientePrevidenciario'.
+src/components/ClienteSlideOver.tsx(824,140): error TS2339: Property 'data_ultimo_recolhimento' does not exist on type 'ClientePrevidenciario'.
+src/components/ClienteSlideOver.tsx(833,135): error TS2339: Property 'data_incapacidade' does not exist on type 'ClientePrevidenciario'.
+src/components/ClienteSlideOver.tsx(837,141): error TS2339: Property 'data_inicio_afastamento' does not exist on type 'ClientePrevidenciario'.
+src/components/ClienteSlideOver.tsx(849,127): error TS2339: Property 'data_acidente' does not exist on type 'ClientePrevidenciario'.
+src/components/ClienteSlideOver.tsx(856,126): error TS2339: Property 'data_obito' does not exist on type 'ClientePrevidenciario'.
+src/components/ClienteSlideOver.tsx(859,120): error TS2339: Property 'grau_parentesco' does not exist on type 'ClientePrevidenciario'.
+src/components/ClienteSlideOver.tsx(875,140): error TS2339: Property 'renda_familiar' does not exist on type 'ClientePrevidenciario'.
+src/components/ClienteSlideOver.tsx(878,144): error TS2339: Property 'numero_dependentes' does not exist on type 'ClientePrevidenciario'.
+src/components/ClienteSlideOver.tsx(885,69): error TS2339: Property 'deficiencia_comprovada' does not exist on type 'ClientePrevidenciario'.
+src/components/ClienteSlideOver.tsx(886,121): error TS2339: Property 'deficiencia_comprovada' does not exist on type 'ClientePrevidenciario'.
+src/components/ClienteSlideOver.tsx(888,57): error TS2339: Property 'deficiencia_comprovada' does not exist on type 'ClientePrevidenciario'.
+src/components/ClienteSlideOver.tsx(891,162): error TS2339: Property 'deficiencia_comprovada' does not exist on type 'ClientePrevidenciario'.
+src/components/ClienteSlideOver.tsx(925,108): error TS2339: Property 'fase_processual' does not exist on type 'ClienteTributario'.
+src/components/ClienteSlideOver.tsx(933,111): error TS2339: Property 'orgao_fiscalizador' does not exist on type 'ClienteTributario'.
+src/components/ClienteSlideOver.tsx(945,112): error TS2339: Property 'regime_tributario' does not exist on type 'ClienteTributario'.
+src/components/ClienteSlideOver.tsx(956,100): error TS2339: Property 'valor_tributo' does not exist on type 'ClienteTributario'.
+src/components/ClienteSlideOver.tsx(959,78): error TS2339: Property 'numero_auto_infracao' does not exist on type 'ClienteTributario'.
+src/components/ClientesPage.tsx(123,13): error TS2554: Expected 2 arguments, but got 1.
+src/components/modals/ModalAudiencia.tsx(162,11): error TS2554: Expected 4 arguments, but got 6.
+src/components/modals/ModalAudiencia.tsx(163,24): error TS2339: Property 'EVENTO_ATUALIZADO' does not exist on type '{ CLIENTE: string; PROCESSO: string; LANCAMENTO: string; AUDIENCIA: string; }'.
+src/components/modals/ModalAudiencia.tsx(171,11): error TS2554: Expected 4 arguments, but got 5.
+src/components/modals/ModalAudiencia.tsx(171,24): error TS2339: Property 'EVENTO_CRIADO' does not exist on type '{ CLIENTE: string; PROCESSO: string; LANCAMENTO: string; AUDIENCIA: string; }'.
+src/components/modals/ModalNovoLancamento.tsx(114,9): error TS2554: Expected 4 arguments, but got 5.
+src/components/modals/ModalNovoLancamento.tsx(114,22): error TS2339: Property 'LANCAMENTO_CRIADO' does not exist on type '{ CLIENTE: string; PROCESSO: string; LANCAMENTO: string; AUDIENCIA: string; }'.
+src/services/datajudService.ts(160,9): error TS2554: Expected 1 arguments, but got 5.
+src/services/datajudService.ts(193,7): error TS2554: Expected 1 arguments, but got 7.
+src/services/datajudService.ts(209,7): error TS2554: Expected 1 arguments, but got 5.
+src/services/index.ts(2,23): error TS2724: '"./auditService"' has no exported member named 'getAuditByUser'. Did you mean 'getAuditLogByUser'?
+src/services/index.ts(2,39): error TS2724: '"./auditService"' has no exported member named 'getAuditByEntity'. Did you mean 'getAuditLogByEntity'?
