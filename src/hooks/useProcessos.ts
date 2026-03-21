@@ -3,6 +3,28 @@ import { Processo } from '../types';
 import { supabase } from '../lib/supabase';
 import { useAuth } from './useAuth';
 import { usePermissions } from './usePermissions';
+import { logPhaseChange, logEncerramento } from '@/services/activityLogger';
+
+// ✅ NOVO: Validar transições de fase permitidas
+const validateFaseTransition = (
+  faseAntiga: string,
+  faseNova: string
+): { valid: boolean; message: string } => {
+  const allowedTransitions: Record<string, string[]> = {
+    ativo: ['sentenciado', 'encerrado'],
+    sentenciado: ['encerrado'],
+    encerrado: [], // Encerrado é final
+  };
+
+  if (!allowedTransitions[faseAntiga]?.includes(faseNova)) {
+    return {
+      valid: false,
+      message: `Transição de ${faseAntiga} para ${faseNova} não é permitida`,
+    };
+  }
+
+  return { valid: true, message: 'Transição permitida' };
+};
 
 export function useProcessos(clienteId?: string) {
   const { currentUser } = useAuth();
@@ -158,6 +180,105 @@ export function useProcessos(clienteId?: string) {
     }
   }, [currentUser?.id]);
 
+  // ✅ NOVO: Alterar fase do processo
+  const changeProcessoPhase = useCallback(
+    async (processoId: string, newFase: string) => {
+      try {
+        if (!currentUser) throw new Error('Usuário não autenticado');
+
+        // Validar que processo existe
+        const processoAtual = processos.find((p) => p.id === processoId);
+        if (!processoAtual) throw new Error('Processo não encontrado');
+
+        // Validar transição de fase
+        const validation = validateFaseTransition(processoAtual.fase, newFase);
+        if (!validation.valid) {
+          return { success: false, error: validation.message };
+        }
+
+        // Atualizar fase no BD
+        const { error: updateError } = await supabase
+          .from('processos')
+          .update({
+            fase: newFase,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', processoId);
+
+        if (updateError) throw updateError;
+
+        // Registrar auditoria
+        await logPhaseChange(currentUser.id, processoId, processoAtual.fase, newFase);
+
+        // Atualizar estado local
+        setProcessos((prev) =>
+          prev.map((p) => (p.id === processoId ? { ...p, fase: newFase } : p))
+        );
+
+        return { success: true };
+      } catch (err) {
+        console.error('Erro ao alterar fase do processo:', err);
+        return { success: false, error: err instanceof Error ? err.message : 'Erro desconhecido' };
+      }
+    },
+    [processos, currentUser]
+  );
+
+  // ✅ NOVO: Encerrar processo com resultado
+  const encerrarProcesso = useCallback(
+    async (processoId: string, resultado: string, observacoes?: string) => {
+      try {
+        if (!currentUser) throw new Error('Usuário não autenticado');
+
+        // Validar que processo existe
+        const processoAtual = processos.find((p) => p.id === processoId);
+        if (!processoAtual) throw new Error('Processo não encontrado');
+
+        // Validar que processo está em fase "Sentenciado"
+        if (processoAtual.fase !== 'sentenciado' && processoAtual.fase !== 'ativo') {
+          return { success: false, error: 'Processo deve estar em fase Ativo ou Sentenciado para ser encerrado' };
+        }
+
+        // Atualizar processo no BD
+        const { error: updateError } = await supabase
+          .from('processos')
+          .update({
+            fase: 'encerrado',
+            resultado: resultado,
+            data_encerramento: new Date().toISOString(),
+            observacoes: observacoes || null,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', processoId);
+
+        if (updateError) throw updateError;
+
+        // Registrar auditoria
+        await logEncerramento(currentUser.id, processoId, resultado, observacoes);
+
+        // Atualizar estado local
+        setProcessos((prev) =>
+          prev.map((p) =>
+            p.id === processoId
+              ? {
+                  ...p,
+                  fase: 'encerrado',
+                  resultado: resultado,
+                  data_encerramento: new Date().toISOString(),
+                }
+              : p
+          )
+        );
+
+        return { success: true };
+      } catch (err) {
+        console.error('Erro ao encerrar processo:', err);
+        return { success: false, error: err instanceof Error ? err.message : 'Erro desconhecido' };
+      }
+    },
+    [processos, currentUser]
+  );
+
   const getProcessoById = useCallback((id: string) => {
     return processos.find(p => p.id === id);
   }, [processos]);
@@ -168,7 +289,9 @@ export function useProcessos(clienteId?: string) {
     error,
     saveProcesso,
     deleteProcesso,
+    changeProcessoPhase,    // ✅ NOVO
+    encerrarProcesso,       // ✅ NOVO
     getProcessoById,
-    reload: load,
+    refetch: load,
   };
 }

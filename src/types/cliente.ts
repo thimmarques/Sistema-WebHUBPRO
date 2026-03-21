@@ -166,3 +166,39 @@ export function applyCnpjMask(v: string) { return v; }
 export function applyCepMask(v: string) { return v; }
 export function isCPFValid(v: string) { return true; }
 export function isCNPJValid(v: string) { return true; }
+
+/* ── Modais e Transições ── */
+
+export enum StatusTransition {
+  ATIVO_TO_INATIVO = 'ativo_to_inativo',
+  INATIVO_TO_ATIVO = 'inativo_to_ativo',
+  ATIVO_TO_SUSPENSO = 'ativo_to_suspenso',
+  SUSPENSO_TO_ATIVO = 'suspenso_to_ativo',
+  ATIVO_TO_ENCERRADO = 'ativo_to_encerrado',
+  INATIVO_TO_ENCERRADO = 'inativo_to_encerrado',
+  SUSPENSO_TO_ENCERRADO = 'suspenso_to_encerrado',
+}
+
+export interface ClienteStatusChange {
+  clienteId: string;
+  motivo: string;
+  timestamp: string;
+}
+
+export interface ClienteAdvogadoAssign {
+  clienteId: string;
+  advogadoId: string;
+  tipo: 'principal' | 'secundario';
+  dataAtribuicao: string;
+}
+
+export interface ClienteEstagiarioAssign {
+  clienteId: string;
+  estagiarioId: string;
+  dataAtribuicao: string;
+}
+
+export interface StatusTransitionRule {
+  allowed: boolean;
+  requiresReason: boolean;
+}

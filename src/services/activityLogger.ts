@@ -52,3 +52,140 @@ export const Descriptions = {
   EVENTO_CRIADO: 'evento_criado',
   LANCAMENTO_CRIADO: 'lancamento_criado'
 };
+
+export async function logStatusChange(
+  userId: string,
+  clienteId: string,
+  statusAntigo: string,
+  statusNovo: string,
+  motivo: string
+) {
+  try {
+    const activity: AtividadeCreate = {
+      usuario_id: userId,
+      entidade: 'clientes_base',
+      entidade_id: clienteId,
+      descricao: `Status alterado de ${statusAntigo} para ${statusNovo}. Motivo: ${motivo}`,
+      tipo: 'update',
+      dados_antigos: { status: statusAntigo },
+      dados_novos: { status: statusNovo },
+      user_agent: navigator.userAgent,
+    };
+
+    const { error } = await supabase.from('atividades').insert([activity]);
+
+    if (error) {
+      console.error('Erro ao registrar mudança de status:', error);
+    }
+  } catch (err) {
+    console.error('Erro ao registrar mudança de status:', err);
+  }
+}
+
+export async function logAssignAdvogado(
+  userId: string,
+  clienteId: string,
+  advogadoId: string,
+  tipo: 'principal' | 'secundario'
+) {
+  try {
+    const activity: AtividadeCreate = {
+      usuario_id: userId,
+      entidade: 'cliente_advogados',
+      entidade_id: clienteId,
+      descricao: `Advogado ${tipo} atribuído ao cliente. Advogado ID: ${advogadoId}`,
+      tipo: 'create',
+      user_agent: navigator.userAgent,
+    };
+
+    const { error } = await supabase.from('atividades').insert([activity]);
+
+    if (error) {
+      console.error('Erro ao registrar atribuição de advogado:', error);
+    }
+  } catch (err) {
+    console.error('Erro ao registrar atribuição de advogado:', err);
+  }
+}
+
+export async function logAssignEstagiario(
+  userId: string,
+  clienteId: string,
+  estagiarioId: string
+) {
+  try {
+    const activity: AtividadeCreate = {
+      usuario_id: userId,
+      entidade: 'cliente_advogados',
+      entidade_id: clienteId,
+      descricao: `Estagiário atribuído ao cliente. Estagiário ID: ${estagiarioId}`,
+      tipo: 'create',
+      user_agent: navigator.userAgent,
+    };
+
+    const { error } = await supabase.from('atividades').insert([activity]);
+
+    if (error) {
+      console.error('Erro ao registrar atribuição de estagiário:', error);
+    }
+  } catch (err) {
+    console.error('Erro ao registrar atribuição de estagiário:', err);
+  }
+}
+
+// ✅ NOVO: Log de mudança de fase
+export async function logPhaseChange(
+  userId: string,
+  processoId: string,
+  faseAntiga: string,
+  faseNova: string
+) {
+  try {
+    const activity: AtividadeCreate = {
+      usuario_id: userId,
+      entidade: 'processos',
+      entidade_id: processoId,
+      descricao: `Fase alterada de ${faseAntiga} para ${faseNova}`,
+      tipo: 'update',
+      dados_antigos: { fase: faseAntiga },
+      dados_novos: { fase: faseNova },
+      user_agent: navigator.userAgent,
+    };
+
+    const { error } = await supabase.from('atividades').insert([activity]);
+
+    if (error) {
+      console.error('Erro ao registrar mudança de fase:', error);
+    }
+  } catch (err) {
+    console.error('Erro ao registrar mudança de fase:', err);
+  }
+}
+
+// ✅ NOVO: Log de encerramento de processo
+export async function logEncerramento(
+  userId: string,
+  processoId: string,
+  resultado: string,
+  observacoes?: string
+) {
+  try {
+    const activity: AtividadeCreate = {
+      usuario_id: userId,
+      entidade: 'processos',
+      entidade_id: processoId,
+      descricao: `Processo encerrado com resultado: ${resultado}. Observações: ${observacoes || 'Nenhuma'}`,
+      tipo: 'update',
+      dados_novos: { fase: 'encerrado', resultado, observacoes },
+      user_agent: navigator.userAgent,
+    };
+
+    const { error } = await supabase.from('atividades').insert([activity]);
+
+    if (error) {
+      console.error('Erro ao registrar encerramento:', error);
+    }
+  } catch (err) {
+    console.error('Erro ao registrar encerramento:', err);
+  }
+}

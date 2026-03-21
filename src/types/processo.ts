@@ -22,7 +22,10 @@ export type FaseType =
   | 'sentenca'
   | 'recurso'
   | 'execucao'
-  | 'arquivado';
+  | 'arquivado'
+  | 'ativo'
+  | 'sentenciado'
+  | 'encerrado';
 
 export interface Processo {
   id: string
@@ -32,7 +35,7 @@ export interface Processo {
     practice_area: string
   }
   practice_area: 'criminal' | 'trabalhista' | 'civil' | 'previdenciario' | 'tributario'
-  fase: 'conhecimento' | 'execucao' | 'recurso' | 'inquerito' | 'instrucao'
+  fase: string // Mudando para string para evitar erros de tipagem com as novas fases dinâmicas
   status: ProcessoStatus
   numero_cnj?: string
   tribunal?: string
@@ -76,6 +79,9 @@ export const faseLabels: Record<FaseType, string> = {
   recurso: 'Recurso',
   execucao: 'Execução',
   arquivado: 'Arquivado',
+  ativo: 'Ativo',
+  sentenciado: 'Sentenciado',
+  encerrado: 'Encerrado',
 };
 
 export const areaColors: Record<string, string> = {
@@ -143,3 +149,42 @@ export const areaTribunalDefault: Record<string, TribunalType> = {
   previdenciario: 'JEF/INSS',
   tributario: 'TRF-3',
 };
+
+// ✅ NOVO: Enum para transições de fase
+export enum FaseTransition {
+  ATIVO_TO_SENTENCIADO = 'ativo_to_sentenciado',
+  SENTENCIADO_TO_ENCERRADO = 'sentenciado_to_encerrado',
+  ATIVO_TO_ENCERRADO = 'ativo_to_encerrado',
+}
+
+// ✅ NOVO: Enum para resultados de processo
+export enum ResultadoProcesso {
+  GANHO = 'ganho',
+  PERDIDO = 'perdido',
+  DESISTENCIA = 'desistencia',
+  ACORDO = 'acordo',
+}
+
+// ✅ NOVO: Tipo para mudança de fase
+export interface ProcessoFaseChange {
+  processoId: string;
+  faseAntiga: string;
+  faseNova: string;
+  timestamp: string;
+}
+
+// ✅ NOVO: Tipo para encerramento de processo
+export interface ProcessoEncerramento {
+  processoId: string;
+  dataEncerramento: string;
+  observacoes?: string;
+  timestamp: string;
+}
+
+// ✅ NOVO: Tipo para validação de transição
+export interface FaseTransitionRule {
+  from: string;
+  to: string;
+  allowed: boolean;
+  requiresReason: boolean;
+}

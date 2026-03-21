@@ -167,20 +167,74 @@ export function useEventos(processoId?: string, clienteId?: string) {
       if (err) throw err;
       
       setEventos(prev => prev.filter(e => e.id !== id));
+      return { success: true };
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Erro ao deletar evento';
       setError(message);
       console.error('Erro ao deletar evento:', err);
-      throw err;
+      return { success: false, error: message };
     }
   }, [currentUser?.id]);
+
+  // ✅ NOVO: Obter evento por ID
+  const getEventoById = useCallback(
+    async (eventoId: string) => {
+      try {
+        const { data, error } = await supabase
+          .from('eventos')
+          .select('*')
+          .eq('id', eventoId)
+          .single();
+
+        if (error) throw error;
+
+        return { success: true, data };
+      } catch (err) {
+        console.error('Erro ao buscar evento:', err);
+        return { success: false, error: err instanceof Error ? err.message : 'Erro desconhecido' };
+      }
+    },
+    []
+  );
+
+  // ✅ NOVO: Atualizar evento
+  const updateEvento = useCallback(
+    async (eventoId: string, updates: Record<string, any>) => {
+      try {
+        if (!currentUser) throw new Error('Usuário não autenticado');
+
+        const { error: updateError } = await supabase
+          .from('eventos')
+          .update({
+            ...updates,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', eventoId);
+
+        if (updateError) throw updateError;
+
+        // Atualizar estado local
+        setEventos((prev) =>
+          prev.map((e) => (e.id === eventoId ? { ...e, ...updates } : e))
+        );
+
+        return { success: true };
+      } catch (err) {
+        console.error('Erro ao atualizar evento:', err);
+        return { success: false, error: err instanceof Error ? err.message : 'Erro desconhecido' };
+      }
+    },
+    [currentUser]
+  );
 
   return {
     eventos: eventosFiltrados,
     loading,
     error,
-    saveEvento,
+    createEvento: saveEvento,
+    updateEvento,        // ✅ NOVO
     deleteEvento,
-    reload: load,
+    getEventoById,       // ✅ NOVO
+    refetch: load,
   };
 }

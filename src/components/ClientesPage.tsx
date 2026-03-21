@@ -29,6 +29,10 @@ import StatusBadge from './StatusBadge';
 import UserAvatar from './UserAvatar';
 import EmptyState from './EmptyState';
 import ClienteSlideOver from './ClienteSlideOver';
+import { ModalChangeStatus } from './modals/ModalChangeStatus';
+import { ModalAssignAdvogado } from './modals/ModalAssignAdvogado';
+import { ModalAssignEstagiario } from './modals/ModalAssignEstagiario';
+
 
 const ITEMS_PER_PAGE = 10;
 
@@ -65,6 +69,15 @@ export default function ClientesPage({ onNavigateDetail }: ClientesPageProps) {
 
   // delete confirmation
   const [deleteId, setDeleteId] = useState<string | null>(null);
+
+  // modals
+  const [selectedClienteForStatus, setSelectedClienteForStatus] = useState<Cliente | null>(null);
+  const [selectedClienteForAdvogado, setSelectedClienteForAdvogado] = useState<Cliente | null>(null);
+  const [selectedClienteForEstagiario, setSelectedClienteForEstagiario] = useState<Cliente | null>(null);
+  const [showStatusModal, setShowStatusModal] = useState(false);
+  const [showAdvogadoModal, setShowAdvogadoModal] = useState(false);
+  const [showEstagiarioModal, setShowEstagiarioModal] = useState(false);
+
 
   // close dropdown on outside click
   useEffect(() => {
@@ -146,10 +159,32 @@ export default function ClientesPage({ onNavigateDetail }: ClientesPageProps) {
   };
 
   const openEdit = (c: Cliente) => {
-    setEditCliente(c);
     setSlideOpen(true);
     setOpenDropdown(null);
   };
+
+  const handleOpenStatusModal = (cliente: Cliente) => {
+    setSelectedClienteForStatus(cliente);
+    setShowStatusModal(true);
+    setOpenDropdown(null);
+  };
+
+  const handleOpenAdvogadoModal = (cliente: Cliente) => {
+    setSelectedClienteForAdvogado(cliente);
+    setShowAdvogadoModal(true);
+    setOpenDropdown(null);
+  };
+
+  const handleOpenEstagiarioModal = (cliente: Cliente) => {
+    setSelectedClienteForEstagiario(cliente);
+    setShowEstagiarioModal(true);
+    setOpenDropdown(null);
+  };
+
+  const handleModalSuccess = () => {
+    showToast('Operação realizada com sucesso', 'success');
+  };
+
 
   const getMembroById = (id: string) => membros.find((u) => u.id === id);
 
@@ -328,9 +363,31 @@ export default function ClientesPage({ onNavigateDetail }: ClientesPageProps) {
                               className="w-full flex items-center gap-2 px-3 py-2 text-sm text-foreground hover:bg-muted/50 transition-colors"
                             >
                               <Edit className="w-4 h-4" />
-                              Editar
-                            </button>
-                            <div className="border-t border-border/50 my-1" />
+                               Editar
+                             </button>
+                             <button
+                               onClick={() => handleOpenStatusModal(c)}
+                               className="w-full flex items-center gap-2 px-3 py-2 text-sm text-foreground hover:bg-muted/50 transition-colors"
+                             >
+                               <Users className="w-4 h-4" />
+                               Alterar Status
+                             </button>
+                             <button
+                               onClick={() => handleOpenAdvogadoModal(c)}
+                               className="w-full flex items-center gap-2 px-3 py-2 text-sm text-foreground hover:bg-muted/50 transition-colors"
+                             >
+                               <UserAvatar name="A" color="blue" size="sm" />
+                               Atribuir Advogado
+                             </button>
+                             <button
+                               onClick={() => handleOpenEstagiarioModal(c)}
+                               className="w-full flex items-center gap-2 px-3 py-2 text-sm text-foreground hover:bg-muted/50 transition-colors"
+                             >
+                               <UserAvatar name="E" color="green" size="sm" />
+                               Atribuir Estagiário
+                             </button>
+                             <div className="border-t border-border/50 my-1" />
+
                             <button
                               onClick={() => { setDeleteId(c.id); setOpenDropdown(null); }}
                               className="w-full flex items-center gap-2 px-3 py-2 text-sm text-red-600 hover:bg-red-50 transition-colors"
@@ -408,6 +465,28 @@ export default function ClientesPage({ onNavigateDetail }: ClientesPageProps) {
           </div>
         </>
       )}
+
+      <ModalChangeStatus
+        isOpen={showStatusModal}
+        cliente={selectedClienteForStatus}
+        onClose={() => setShowStatusModal(false)}
+        onSuccess={handleModalSuccess}
+      />
+
+      <ModalAssignAdvogado
+        isOpen={showAdvogadoModal}
+        cliente={selectedClienteForAdvogado}
+        onClose={() => setShowAdvogadoModal(false)}
+        onSuccess={handleModalSuccess}
+      />
+
+      <ModalAssignEstagiario
+        isOpen={showEstagiarioModal}
+        cliente={selectedClienteForEstagiario}
+        onClose={() => setShowEstagiarioModal(false)}
+        onSuccess={handleModalSuccess}
+      />
     </div>
+
   );
 }

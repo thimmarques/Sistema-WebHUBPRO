@@ -99,3 +99,18 @@ export const audienciaStatusColors: Record<AudienciaStatus, string> = {
   adiada: 'bg-amber-100 text-amber-700',
   cancelada: 'bg-muted/80 text-muted-foreground',
 };
+
+// ✅ NOVO: Tipo para visualização de evento
+export interface EventoDetalhes extends Evento {
+  processoNome?: string;
+  clienteNome?: string;
+  responsavelNome?: string;
+}
+
+// ✅ NOVO: Tipo para edição de evento
+export interface EventoUpdate {
+  tipo?: string;
+  data?: string;
+  descricao?: string;
+  responsavel_id?: string;
+}

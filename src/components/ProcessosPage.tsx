@@ -23,6 +23,9 @@ import {
 import { useAuth } from '@/contexts/AuthContext';
 import { useToastContext } from '@/contexts/ToastContext';
 import { useProcessos, useClientes, useEquipe } from '@/hooks';
+import { ModalChangePhase } from '@/components/modals/ModalChangePhase';
+import { ModalEncerramento } from '@/components/modals/ModalEncerramento';
+import { ModalViewEvento } from '@/components/modals/ModalViewEvento';
 import {
   Processo,
   ProcessoStatus,
@@ -105,7 +108,7 @@ export default function ProcessosPage({ onNavigateDetail }: ProcessosPageProps) 
   const { showToast } = useToastContext();
   const admin = isAdmin();
 
-  const { processos: allProcessos, loading: loadingProcessos, saveProcesso, deleteProcesso } = useProcessos();
+  const { processos: allProcessos, loading: loadingProcessos, saveProcesso, deleteProcesso, refetch } = useProcessos();
   const { membros } = useEquipe();
 
   const [search, setSearch] = useState('');
@@ -119,6 +122,13 @@ export default function ProcessosPage({ onNavigateDetail }: ProcessosPageProps) 
   const [openDropdown, setOpenDropdown] = useState<string | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
+
+  const [selectedProcessoForPhase, setSelectedProcessoForPhase] = useState<Processo | null>(null);
+  const [selectedProcessoForEncerramento, setSelectedProcessoForEncerramento] = useState<Processo | null>(null);
+  const [selectedEventoId, setSelectedEventoId] = useState<string | null>(null);
+  const [showPhaseModal, setShowPhaseModal] = useState(false);
+  const [showEncerramentoModal, setShowEncerramentoModal] = useState(false);
+  const [showEventoModal, setShowEventoModal] = useState(false);
 
   /* ─── filtering ─── */
   const filtered = useMemo(() => {
@@ -184,6 +194,25 @@ export default function ProcessosPage({ onNavigateDetail }: ProcessosPageProps) 
   };
 
   const getMembroById = (id: string) => membros.find((u) => u.id === id);
+
+  const handleOpenPhaseModal = (processo: Processo) => {
+    setSelectedProcessoForPhase(processo);
+    setShowPhaseModal(true);
+  };
+
+  const handleOpenEncerramentoModal = (processo: Processo) => {
+    setSelectedProcessoForEncerramento(processo);
+    setShowEncerramentoModal(true);
+  };
+
+  const handleOpenEventoModal = (eventoId: string) => {
+    setSelectedEventoId(eventoId);
+    setShowEventoModal(true);
+  };
+
+  const handleModalSuccess = () => {
+    refetch(); // Recarregar lista de processos
+  };
 
   const handleDelete = async (id: string) => {
     try {
@@ -383,6 +412,7 @@ export default function ProcessosPage({ onNavigateDetail }: ProcessosPageProps) 
                     </th>
                   )}
                   <th className="text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider px-4 py-3">Ações</th>
+                  <th className="text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider px-4 py-3">Gerenciamento</th>
                 </tr>
               </thead>
               <tbody>
@@ -443,11 +473,29 @@ export default function ProcessosPage({ onNavigateDetail }: ProcessosPageProps) 
                               onEdit={() => { setOpenDropdown(null); }}
                               onAudiencia={() => { setOpenDropdown(null); }}
                               onEnclose={() => { setOpenDropdown(null); handleEnclose(proc.id); }}
-                              onDelete={() => { setOpenDropdown(null); setDeleteConfirm(proc.id); }}
-                            />
-                          )}
-                        </div>
-                      </td>
+                                onDelete={() => { setOpenDropdown(null); setDeleteConfirm(proc.id); }}
+                              />
+                            )}
+                          </div>
+                        </td>
+                        <td className="px-4 py-3.5">
+                          <div className="flex gap-2">
+                            <button
+                              onClick={() => handleOpenPhaseModal(proc)}
+                              className="text-blue-600 hover:text-blue-800 text-xs font-medium"
+                              title="Alterar Fase"
+                            >
+                              Fase
+                            </button>
+                            <button
+                              onClick={() => handleOpenEncerramentoModal(proc)}
+                              className="text-blue-600 hover:text-blue-800 text-xs font-medium"
+                              title="Encerrar"
+                            >
+                              Encerrar
+                            </button>
+                          </div>
+                        </td>
                     </tr>
                   );
                 })}
@@ -504,6 +552,27 @@ export default function ProcessosPage({ onNavigateDetail }: ProcessosPageProps) 
           currentUserId={currentUser!.id}
         />
       )}
+
+      <ModalChangePhase
+        isOpen={showPhaseModal}
+        processo={selectedProcessoForPhase}
+        onClose={() => setShowPhaseModal(false)}
+        onSuccess={handleModalSuccess}
+      />
+
+      <ModalEncerramento
+        isOpen={showEncerramentoModal}
+        processo={selectedProcessoForEncerramento}
+        onClose={() => setShowEncerramentoModal(false)}
+        onSuccess={handleModalSuccess}
+      />
+
+      <ModalViewEvento
+        isOpen={showEventoModal}
+        eventoId={selectedEventoId}
+        onClose={() => setShowEventoModal(false)}
+        onSuccess={handleModalSuccess}
+      />
     </div>
   );
 }

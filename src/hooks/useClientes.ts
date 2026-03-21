@@ -3,7 +3,29 @@ import { supabase } from '@/lib/supabase';
 import { Cliente, ClienteForm } from '@/types/cliente';
 import { useAuth } from '@/contexts/AuthContext';
 import { usePermissions } from './usePermissions';
-import { logCreateCliente, logUpdateCliente, logDeleteCliente } from '@/services/activityLogger';
+import { logCreateCliente, logUpdateCliente, logDeleteCliente, logStatusChange, logAssignAdvogado, logAssignEstagiario } from '@/services/activityLogger';
+
+const validateStatusTransition = (
+  statusAntigo: string,
+  statusNovo: string
+): { valid: boolean; message: string } => {
+  const allowedTransitions: Record<string, string[]> = {
+    ativo: ['inativo', 'suspenso', 'encerrado'],
+    inativo: ['ativo', 'encerrado'],
+    suspenso: ['ativo', 'encerrado'],
+    encerrado: [], // Encerrado é final
+  };
+
+  if (!allowedTransitions[statusAntigo]?.includes(statusNovo)) {
+    return {
+      valid: false,
+      message: `Transição de ${statusAntigo} para ${statusNovo} não é permitida`,
+    };
+  }
+
+  return { valid: true, message: 'Transição permitida' };
+};
+
 
 export function useClientes() {
   const { currentUser } = useAuth();
@@ -132,7 +154,127 @@ export function useClientes() {
     [clientes, currentUser]
   );
 
+
+  const changeClientStatus = useCallback(
+    async (clienteId: string, newStatus: string, motivo: string) => {
+      try {
+        if (!currentUser) throw new Error('Usuário não autenticado');
+
+        const clienteAtual = clientes.find((c) => c.id === clienteId);
+        if (!clienteAtual) throw new Error('Cliente não encontrado');
+
+        const validation = validateStatusTransition(clienteAtual.status, newStatus);
+        if (!validation.valid) {
+          return { success: false, error: validation.message };
+        }
+
+        const { error: updateError } = await supabase
+          .from('clientes_base')
+          .update({
+            status: newStatus,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', clienteId);
+
+        if (updateError) throw updateError;
+
+        await logStatusChange(currentUser.id, clienteId, clienteAtual.status, newStatus, motivo);
+
+        setClientes((prev) =>
+          prev.map((c) => (c.id === clienteId ? { ...c, status: newStatus as any } : c))
+        );
+
+        return { success: true };
+      } catch (err) {
+        console.error('Erro ao alterar status do cliente:', err);
+        return { success: false, error: err instanceof Error ? err.message : 'Erro desconhecido' };
+      }
+    },
+    [clientes, currentUser]
+  );
+
+  const assignAdvogado = useCallback(
+    async (clienteId: string, advogadoId: string, tipo: 'principal' | 'secundario' = 'secundario') => {
+      try {
+        if (!currentUser) throw new Error('Usuário não autenticado');
+
+        const clienteAtual = clientes.find((c) => c.id === clienteId);
+        if (!clienteAtual) throw new Error('Cliente não encontrado');
+
+        if (tipo === 'principal') {
+          const { error: updateError } = await supabase
+            .from('clientes_base')
+            .update({
+              responsible_id: advogadoId,
+              updated_at: new Date().toISOString(),
+            })
+            .eq('id', clienteId);
+
+          if (updateError) throw updateError;
+
+          setClientes((prev) =>
+            prev.map((c) => (c.id === clienteId ? { ...c, responsible_id: advogadoId } : c))
+          );
+        } else {
+          const { error: insertError } = await supabase
+            .from('cliente_advogados')
+            .insert([
+              {
+                cliente_id: clienteId,
+                advogado_id: advogadoId,
+                tipo: 'secundario',
+                created_at: new Date().toISOString(),
+              },
+            ]);
+
+          if (insertError) throw insertError;
+        }
+
+        await logAssignAdvogado(currentUser.id, clienteId, advogadoId, tipo);
+
+        return { success: true };
+      } catch (err) {
+        console.error('Erro ao atribuir advogado:', err);
+        return { success: false, error: err instanceof Error ? err.message : 'Erro desconhecido' };
+      }
+    },
+    [clientes, currentUser]
+  );
+
+  const assignEstagiario = useCallback(
+    async (clienteId: string, estagiarioId: string) => {
+      try {
+        if (!currentUser) throw new Error('Usuário não autenticado');
+
+        const clienteAtual = clientes.find((c) => c.id === clienteId);
+        if (!clienteAtual) throw new Error('Cliente não encontrado');
+
+        const { error: insertError } = await supabase
+          .from('cliente_advogados')
+          .insert([
+            {
+              cliente_id: clienteId,
+              advogado_id: estagiarioId,
+              tipo: 'estagiario',
+              created_at: new Date().toISOString(),
+            },
+          ]);
+
+        if (insertError) throw insertError;
+
+        await logAssignEstagiario(currentUser.id, clienteId, estagiarioId);
+
+        return { success: true };
+      } catch (err) {
+        console.error('Erro ao atribuir estagiário:', err);
+        return { success: false, error: err instanceof Error ? err.message : 'Erro desconhecido' };
+      }
+    },
+    [clientes, currentUser]
+  );
+
   const deleteCliente = useCallback(
+
     async (id: string) => {
       try {
         if (!currentUser) throw new Error('Usuário não autenticado');
@@ -189,6 +331,9 @@ export function useClientes() {
     createCliente,
     updateCliente,
     deleteCliente,
+    changeClientStatus,
+    assignAdvogado,
+    assignEstagiario,
     refetch: fetchClientes,
     saveCliente: saveClientePolymorphic,
   };
