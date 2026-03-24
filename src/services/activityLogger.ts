@@ -189,3 +189,82 @@ export async function logEncerramento(
     console.error('Erro ao registrar encerramento:', err);
   }
 }
+
+// ✅ NOVO: Log de reconciliação de lançamento
+export async function logReconciliacao(
+  userId: string,
+  lancamentoId: string,
+  statusAntigo: string,
+  statusNovo: string,
+  observacoes?: string
+) {
+  try {
+    const activity: AtividadeCreate = {
+      usuario_id: userId,
+      entidade: 'lancamentos',
+      entidade_id: lancamentoId,
+      descricao: `Lançamento reconciliado. Status: ${statusAntigo} → ${statusNovo}. Observações: ${observacoes || 'Nenhuma'}`,
+      tipo: 'update',
+      dados_antigos: { status_reconciliacao: statusAntigo },
+      dados_novos: { status_reconciliacao: statusNovo },
+      user_agent: navigator.userAgent,
+    };
+
+    const { error } = await supabase.from('atividades').insert([activity]);
+
+    if (error) {
+      console.error('Erro ao registrar reconciliação:', error);
+    }
+  } catch (err) {
+    console.error('Erro ao registrar reconciliação:', err);
+  }
+}
+
+// ✅ NOVO: Log de mudança de senha
+export async function logPasswordChange(userId: string) {
+  try {
+    const activity: AtividadeCreate = {
+      usuario_id: userId,
+      entidade: 'profiles',
+      entidade_id: userId,
+      descricao: `Senha alterada`,
+      tipo: 'update',
+      dados_novos: { password_changed_at: new Date().toISOString() },
+      user_agent: navigator.userAgent,
+    };
+
+    const { error } = await supabase.from('atividades').insert([activity]);
+
+    if (error) {
+      console.error('Erro ao registrar mudança de senha:', error);
+    }
+  } catch (err) {
+    console.error('Erro ao registrar mudança de senha:', err);
+  }
+}
+
+// ✅ NOVO: Log de atualização de preferências de notificações
+export async function logNotificacoesUpdate(
+  userId: string,
+  preferencias: Record<string, any>
+) {
+  try {
+    const activity: AtividadeCreate = {
+      usuario_id: userId,
+      entidade: 'notificacoes_preferencias',
+      entidade_id: userId,
+      descricao: `Preferências de notificações atualizadas`,
+      tipo: 'update',
+      dados_novos: preferencias,
+      user_agent: navigator.userAgent,
+    };
+
+    const { error } = await supabase.from('atividades').insert([activity]);
+
+    if (error) {
+      console.error('Erro ao registrar atualização de notificações:', error);
+    }
+  } catch (err) {
+    console.error('Erro ao registrar atualização de notificações:', err);
+  }
+}

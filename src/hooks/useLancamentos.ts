@@ -3,7 +3,7 @@ import { Lancamento } from '../types';
 import { supabase } from '../lib/supabase';
 import { useAuth } from './useAuth';
 import { usePermissions } from './usePermissions';
-
+import { logReconciliacao } from '../services/activityLogger';
 export function useLancamentos(clienteId?: string, processoId?: string) {
   const { currentUser } = useAuth();
   const { role, currentScope } = usePermissions();
@@ -143,6 +143,93 @@ export function useLancamentos(clienteId?: string, processoId?: string) {
     }
   }, [currentUser?.id]);
 
+  // ✅ NOVO: Reconciliar lançamento
+  const reconciliarLancamento = useCallback(
+    async (lancamentoId: string, statusReconciliacao: string, observacoes?: string) => {
+      try {
+        if (!currentUser) throw new Error('Usuário não autenticado');
+
+        // Validar que lançamento existe
+        const lancamentoAtual = lancamentos.find((l) => l.id === lancamentoId);
+        if (!lancamentoAtual) throw new Error('Lançamento não encontrado');
+
+        // Atualizar status de reconciliação no BD
+        const { error: updateError } = await supabase
+          .from('lancamentos')
+          .update({
+            status_reconciliacao: statusReconciliacao,
+            data_reconciliacao: new Date().toISOString(),
+            observacoes_reconciliacao: observacoes || null,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', lancamentoId);
+
+        if (updateError) throw updateError;
+
+        // Registrar auditoria
+        await logReconciliacao(
+          currentUser.id,
+          lancamentoId,
+          (lancamentoAtual as any).status_reconciliacao || 'pendente',
+          statusReconciliacao,
+          observacoes
+        );
+
+        // Atualizar estado local
+        setLancamentos((prev) =>
+          prev.map((l) =>
+            l.id === lancamentoId
+              ? {
+                  ...l,
+                  status_reconciliacao: statusReconciliacao,
+                  data_reconciliacao: new Date().toISOString(),
+                }
+              : l
+          )
+        );
+
+        return { success: true };
+      } catch (err) {
+        console.error('Erro ao reconciliar lançamento:', err);
+        return { success: false, error: err instanceof Error ? err.message : 'Erro desconhecido' };
+      }
+    },
+    [lancamentos, currentUser]
+  );
+
+  // ✅ NOVO: Atualizar lançamento
+  const updateLancamento = useCallback(
+    async (lancamentoId: string, updates: Record<string, any>) => {
+      try {
+        if (!currentUser) throw new Error('Usuário não autenticado');
+
+        const lancamentoAtual = lancamentos.find((l) => l.id === lancamentoId);
+        if (!lancamentoAtual) throw new Error('Lançamento não encontrado');
+
+        const { error: updateError } = await supabase
+          .from('lancamentos')
+          .update({
+            ...updates,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', lancamentoId);
+
+        if (updateError) throw updateError;
+
+        // Atualizar estado local
+        setLancamentos((prev) =>
+          prev.map((l) => (l.id === lancamentoId ? { ...l, ...updates } : l))
+        );
+
+        return { success: true };
+      } catch (err) {
+        console.error('Erro ao atualizar lançamento:', err);
+        return { success: false, error: err instanceof Error ? err.message : 'Erro desconhecido' };
+      }
+    },
+    [lancamentos, currentUser]
+  );
+
   // Deletar lançamento (soft delete)
   const deleteLancamento = useCallback(async (id: string) => {
     try {
@@ -174,7 +261,9 @@ export function useLancamentos(clienteId?: string, processoId?: string) {
     loading,
     error,
     saveLancamento,
+    updateLancamento,        // ✅ NOVO
     deleteLancamento,
+    reconciliarLancamento,   // ✅ NOVO
     reload: load,
   };
 }

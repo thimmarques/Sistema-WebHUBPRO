@@ -66,3 +66,27 @@ export const tipoDescricaoSuggestion: Record<LancamentoTipo, string> = {
   custas: 'Custas processuais — ',
   receita: 'Receita — ',
 };
+
+// ✅ NOVO: Enum para status de reconciliação
+export enum StatusReconciliacao {
+  PENDENTE = 'pendente',
+  RECONCILIADO = 'reconciliado',
+  DIVERGENCIA = 'divergencia',
+}
+
+// ✅ NOVO: Tipo para reconciliação de lançamento
+export interface LancamentoReconciliacao {
+  lancamentoId: string;
+  dataReconciliacao: string;
+  observacoes?: string;
+  timestamp: string;
+}
+
+// ✅ NOVO: Tipo para atualização de lançamento
+export interface LancamentoUpdate {
+  descricao?: string;
+  valor?: number;
+  data?: string;
+  categoria?: string;
+  observacoes?: string;
+}

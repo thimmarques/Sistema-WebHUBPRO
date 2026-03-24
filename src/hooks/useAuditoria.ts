@@ -3,6 +3,7 @@ import { Atividade } from '../types';
 import { supabase } from '../lib/supabase';
 import { useAuth } from './useAuth';
 import { usePermissions } from './usePermissions';
+import { FiltrosAuditoria, AuditoriaDetalhes, AuditoriaResumo } from '../types/auditoria';
 
 export function useAuditoria(clienteId?: string, processoId?: string) {
   const { currentUser } = useAuth();
@@ -162,15 +163,157 @@ export function useAuditoria(clienteId?: string, processoId?: string) {
     }
   }, []);
 
+  // ✅ NOVO: Buscar logs com filtros avançados
+  const getAuditLogWithFilters = useCallback(
+    async (filtros?: FiltrosAuditoria) => {
+      try {
+        setLoading(true);
+        setError(null);
+
+        let query = supabase
+          .from('atividades')
+          .select('*')
+          .order('created_at', { ascending: false });
+
+        if (filtros?.usuario) {
+          query = query.eq('usuario_id', filtros.usuario);
+        }
+
+        if (filtros?.entidade) {
+          query = query.eq('entidade', filtros.entidade);
+        }
+
+        if (filtros?.tipo) {
+          query = query.eq('tipo', filtros.tipo);
+        }
+
+        if (filtros?.dataInicio && filtros?.dataFim) {
+          query = query.gte('created_at', filtros.dataInicio).lte('created_at', filtros.dataFim);
+        }
+
+        if (filtros?.busca) {
+          query = query.ilike('descricao', `%${filtros.busca}%`);
+        }
+
+        const { data, error: fetchError } = await query;
+
+        if (fetchError) throw fetchError;
+
+        setLoading(false);
+        return { success: true, data: data as AuditoriaDetalhes[] };
+      } catch (err) {
+        console.error('Erro ao buscar logs com filtros:', err);
+        setError('Erro ao buscar logs');
+        setLoading(false);
+        return { success: false, error: err instanceof Error ? err.message : 'Erro desconhecido' };
+      }
+    },
+    []
+  );
+
+  // ✅ NOVO: Buscar resumo de auditoria
+  const getAuditoriaResumo = useCallback(async (): Promise<AuditoriaResumo | null> => {
+    try {
+      const { data, error } = await supabase
+        .from('atividades')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+
+      const hoje = new Date();
+      const inicioSemana = new Date(hoje);
+      inicioSemana.setDate(hoje.getDate() - 7);
+
+      const logsHoje =
+        data?.filter((log) => {
+          const logDate = new Date(log.created_at);
+          return logDate.toDateString() === hoje.toDateString();
+        }).length || 0;
+
+      const logsEstaSemanA =
+        data?.filter((log) => {
+          const logDate = new Date(log.created_at);
+          return logDate >= inicioSemana && logDate <= hoje;
+        }).length || 0;
+
+      // Usuários mais ativos
+      const usuariosMap = new Map<string, number>();
+      data?.forEach((log) => {
+        const count = usuariosMap.get(log.usuario_id) || 0;
+        usuariosMap.set(log.usuario_id, count + 1);
+      });
+
+      const usuariosMaisAtivos = Array.from(usuariosMap.entries())
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 5)
+        .map(([usuarioId, total]) => ({
+          usuarioId,
+          usuarioNome: usuarioId, // TODO: Buscar nome do usuário
+          totalAcoes: total,
+        }));
+
+      // Entidades mais alteradas
+      const entidadesMap = new Map<string, number>();
+      data?.forEach((log) => {
+        const count = entidadesMap.get(log.entidade) || 0;
+        entidadesMap.set(log.entidade, count + 1);
+      });
+
+      const entidadesMaisAlteradas = Array.from(entidadesMap.entries())
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 5)
+        .map(([entidade, total]) => ({
+          entidade,
+          totalAlteracoes: total,
+        }));
+
+      // Tipos de ação mais frequentes
+      const tiposMap = new Map<string, number>();
+      data?.forEach((log) => {
+        const count = tiposMap.get(log.tipo) || 0;
+        tiposMap.set(log.tipo, count + 1);
+      });
+
+      const tiposAcaoMaisFrequentes = Array.from(tiposMap.entries())
+        .sort((a, b) => b[1] - a[1])
+        .map(([tipo, total]) => ({
+          tipo,
+          total,
+        }));
+
+      return {
+        totalLogs: data?.length || 0,
+        logsHoje,
+        logsEstaSemanA,
+        usuariosMaisAtivos,
+        entidadesMaisAlteradas,
+        tiposAcaoMaisFrequentes,
+      };
+    } catch (err) {
+      console.error('Erro ao buscar resumo de auditoria:', err);
+      return null;
+    }
+  }, []);
+
   return {
     atividades: atividadesFiltradas,
     loading,
     error,
+    // Funções originais (compatibilidade)
     getAtividadesPorUsuario,
     getAtividadesPorTipo,
     getAtividadesPorData,
     logAtividade,
     deleteAtividade,
     reload: load,
+    // Aliases para compatibilidade com Fase 2
+    getAuditLog: load,
+    getAuditLogByEntity: (entidade: string) => getAuditLogWithFilters({ entidade }),
+    getAuditLogByUser: (usuario: string) => getAuditLogWithFilters({ usuario }),
+    // ✅ NOVO: Funções expandidas
+    getAuditLogWithFilters,
+    getAuditoriaResumo,
+    refetch: load,
   };
 }

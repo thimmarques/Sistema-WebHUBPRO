@@ -231,6 +231,7 @@ export function useEventos(processoId?: string, clienteId?: string) {
     eventos: eventosFiltrados,
     loading,
     error,
+    saveEvento,
     createEvento: saveEvento,
     updateEvento,        // ✅ NOVO
     deleteEvento,

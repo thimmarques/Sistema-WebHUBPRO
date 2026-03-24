@@ -2,7 +2,7 @@ import React, { useState, useMemo, useCallback, useEffect } from 'react';
 import {
   Plus, Search, Download, Wallet, TrendingUp, AlertTriangle, Percent,
   MoreHorizontal, Eye, Edit, Trash2, CheckCircle, DollarSign, X, Info, ChevronUp, ChevronDown, ChevronLeft, ChevronRight,
-  Loader2,
+  Loader2, RefreshCw
 } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import { useToastContext } from '@/contexts/ToastContext';
@@ -21,6 +21,8 @@ import {
   tipoDescricaoSuggestion,
 } from '@/types/lancamento';
 import { areaLabels, areaColors } from '@/types/processo';
+import { ModalViewLancamento } from './modals/ModalViewLancamento';
+import { ModalReconciliacao } from './modals/ModalReconciliacao';
 
 function formatBRL(v: number): string {
   return v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
@@ -80,6 +82,10 @@ export default function FinanceiroPage() {
   const [showPagoModal, setShowPagoModal] = useState<Lancamento | null>(null);
   const [pagoDate, setPagoDate] = useState(new Date().toISOString().slice(0, 10));
   const [dropdownOpen, setDropdownOpen] = useState<string | null>(null);
+
+  // Modal States
+  const [viewLancamentoModal, setViewLancamentoModal] = useState<Lancamento | null>(null);
+  const [reconciliacaoModal, setReconciliacaoModal] = useState<Lancamento | null>(null);
 
   // KPIs
   const metrics = useMemo(() => {
@@ -373,7 +379,8 @@ export default function FinanceiroPage() {
                                   {l.status !== 'pago' && (
                                     <button onClick={() => { setDropdownOpen(null); setPagoDate(new Date().toISOString().slice(0, 10)); setShowPagoModal(l); }} className="w-full text-left px-5 py-3 text-[13px] font-bold text-emerald-600 hover:bg-emerald-50/50 flex items-center gap-3 transition-colors"><CheckCircle className="w-4 h-4" />Marcar como Pago</button>
                                   )}
-                                  <button onClick={() => { setDropdownOpen(null); showToast('Em desenvolvimento', 'info'); }} className="w-full text-left px-5 py-3 text-[13px] font-bold text-foreground/80 hover:bg-muted/50 flex items-center gap-3 transition-colors"><Edit className="w-4 h-4" />Editar Lançamento</button>
+                                  <button onClick={() => { setDropdownOpen(null); setReconciliacaoModal(l); }} className="w-full text-left px-5 py-3 text-[13px] font-bold text-foreground/80 hover:bg-muted/50 flex items-center gap-3 transition-colors"><RefreshCw className="w-4 h-4" />Reconciliar</button>
+                                  <button onClick={() => { setDropdownOpen(null); setViewLancamentoModal(l); }} className="w-full text-left px-5 py-3 text-[13px] font-bold text-foreground/80 hover:bg-muted/50 flex items-center gap-3 transition-colors"><Eye className="w-4 h-4" />Visualizar/Editar</button>
                                   <div className="h-px bg-border/50 mx-2 my-2" />
                                   <button onClick={() => handleDelete(l.id)} className="w-full text-left px-5 py-3 text-[13px] font-bold text-rose-600 hover:bg-rose-50/50 flex items-center gap-3 transition-colors"><Trash2 className="w-4 h-4" />Excluir Registro</button>
                                 </div>
@@ -511,6 +518,28 @@ export default function FinanceiroPage() {
           }} 
         />
       )}
+
+      {/* MODAL VIEW / EDIT LANÇAMENTO */}
+      <ModalViewLancamento
+        isOpen={!!viewLancamentoModal}
+        lancamento={viewLancamentoModal}
+        onClose={() => setViewLancamentoModal(null)}
+        onSuccess={() => {
+          setViewLancamentoModal(null);
+          showToast('Operação realizada com sucesso', 'success');
+        }}
+      />
+
+      {/* MODAL RECONCILIAÇÃO */}
+      <ModalReconciliacao
+        isOpen={!!reconciliacaoModal}
+        lancamento={reconciliacaoModal}
+        onClose={() => setReconciliacaoModal(null)}
+        onSuccess={() => {
+          setReconciliacaoModal(null);
+          showToast('Reconciliação registrada', 'success');
+        }}
+      />
     </div>
   );
 

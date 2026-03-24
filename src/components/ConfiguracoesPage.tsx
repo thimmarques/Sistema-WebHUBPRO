@@ -16,6 +16,8 @@ import { useAuditoria } from '@/hooks/useAuditoria';
 import { useOfficeSettings } from '@/hooks/useOfficeSettings';
 import AccessDeniedScreen from './AccessDeniedScreen';
 import UserAvatar from './UserAvatar';
+import { ModalChangePassword } from './modals/ModalChangePassword';
+import { ModalNotificacoes } from './modals/ModalNotificacoes';
 
 // Note: Configuração do escritório e sistema devem vir do BD via hooks específicos ou contexto global.
 // Para esta refatoração, manteremos as interfaces mas removeremos os loads de mock.
@@ -310,6 +312,9 @@ function MeuPerfilSection() {
   const [saved, setSaved] = useState(false);
   const [pwMismatch, setPwMismatch] = useState(false);
 
+  const [showPasswordModal, setShowPasswordModal] = useState(false);
+  const [showNotificacoesModal, setShowNotificacoesModal] = useState(false);
+
   const strength = getPasswordStrength(newPw);
 
   const handleDiscard = () => {
@@ -412,49 +417,23 @@ function MeuPerfilSection() {
           </div>
         </div>
 
-        {/* Change Password */}
+        {/* Actions */}
         <div className="mt-6 pt-6 border-t border-border/50">
-          <div className="flex items-center gap-2 mb-4">
-            <Lock className="w-4 h-4 text-muted-foreground" />
-            <h3 className="text-sm font-semibold text-foreground">Alterar Senha</h3>
-          </div>
-          <div className="grid grid-cols-2 gap-4">
-            <div className="col-span-2 relative">
-              <label className="text-sm font-medium text-foreground/80">Senha Atual*</label>
-              <div className="relative mt-1">
-                <input type={showCurrent ? 'text' : 'password'} value={currentPw} onChange={e => setCurrentPw(e.target.value)} className="w-full border border-border rounded-md px-3 py-2 pr-10 text-sm focus:outline-none focus:ring-2 focus:ring-ring" placeholder="••••••••" />
-                <button type="button" onClick={() => setShowCurrent(!showCurrent)} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground">
-                  {showCurrent ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                </button>
-              </div>
-            </div>
-            <div className="relative">
-              <label className="text-sm font-medium text-foreground/80">Nova Senha*</label>
-              <div className="relative mt-1">
-                <input type={showNew ? 'text' : 'password'} value={newPw} onChange={e => setNewPw(e.target.value)} className="w-full border border-border rounded-md px-3 py-2 pr-10 text-sm focus:outline-none focus:ring-2 focus:ring-ring" placeholder="••••••••" />
-                <button type="button" onClick={() => setShowNew(!showNew)} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground">
-                  {showNew ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                </button>
-              </div>
-              {newPw && (
-                <div className="mt-1.5">
-                  <div className="h-1 rounded-full bg-muted/80 overflow-hidden">
-                    <div className={`h-full rounded-full ${strength.color.split(' ')[1] || ''} ${strength.width} transition-all duration-300`} />
-                  </div>
-                  <span className={`text-xs mt-1 ${strength.color.split(' ')[0] || ''}`}>{strength.label}</span>
-                </div>
-              )}
-            </div>
-            <div className="relative">
-              <label className="text-sm font-medium text-foreground/80">Confirmar Nova Senha*</label>
-              <div className="relative mt-1">
-                <input type={showConfirm ? 'text' : 'password'} value={confirmPw} onChange={e => { setConfirmPw(e.target.value); setPwMismatch(false); }} onBlur={() => { if (confirmPw && confirmPw !== newPw) setPwMismatch(true); }} className={`w-full border rounded-md px-3 py-2 pr-10 text-sm focus:outline-none focus:ring-2 focus:ring-ring ${pwMismatch ? 'border-red-300' : 'border-border'}`} placeholder="••••••••" />
-                <button type="button" onClick={() => setShowConfirm(!showConfirm)} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground">
-                  {showConfirm ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                </button>
-              </div>
-              {pwMismatch && <p className="text-xs text-red-500 mt-1">As senhas não coincidem</p>}
-            </div>
+          <div className="flex gap-4">
+            <button
+              type="button"
+              onClick={() => setShowPasswordModal(true)}
+              className="px-4 py-2 border border-border rounded-md text-sm font-medium hover:bg-muted flex items-center gap-2"
+            >
+              <Lock className="w-4 h-4" /> Alterar Senha
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowNotificacoesModal(true)}
+              className="px-4 py-2 border border-border rounded-md text-sm font-medium hover:bg-muted flex items-center gap-2"
+            >
+              <MessageCircle className="w-4 h-4" /> Preferências de Notificações
+            </button>
           </div>
         </div>
       </div>
@@ -470,6 +449,24 @@ function MeuPerfilSection() {
           <button onClick={handleSave} className="bg-primary text-white rounded-md px-5 py-2 text-sm font-medium hover:bg-primary/90">Salvar Alterações</button>
         </div>
       </div>
+
+      <ModalChangePassword
+        isOpen={showPasswordModal}
+        onClose={() => setShowPasswordModal(false)}
+        onSuccess={() => {
+          setShowPasswordModal(false);
+          showToast('Senha alterada com sucesso!', 'success');
+        }}
+      />
+
+      <ModalNotificacoes
+        isOpen={showNotificacoesModal}
+        onClose={() => setShowNotificacoesModal(false)}
+        onSuccess={() => {
+          setShowNotificacoesModal(false);
+          showToast('Preferências de notificação salvas!', 'success');
+        }}
+      />
     </div>
   );
 }
